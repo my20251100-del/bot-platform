@@ -1,0 +1,17 @@
+[Unit]
+Description=Bot-Platform WhatsApp Engine
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=maknoon
+WorkingDirectory=/home/maknoon/Desktop/bot-platform
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/env node --env-file=/home/maknoon/Desktop/bot-platform/.env.local /home/maknoon/Desktop/bot-platform/engine/index.mjs
+Restart=always
+RestartSec=5
+KillSignal=SIGINT
+
+[Install]
+WantedBy=multi-user.target

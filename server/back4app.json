@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schemastore.org/", 
+  "project": "whatsapp-bot-backend",
+  "description": "Express + whatsapp-web.js WhatsApp bot backend for Back4App",
+  "runtime": {
+    "type": "docker",
+    "dockerfile": "Dockerfile",
+    "baseImage": "node:22-slim",
+    "note": "Node 22 provides native WebSocket (Supabase). A ws polyfill is also active in src/utils/supabase.js as a fallback."
+  },
+  "port": 10000,
+  "healthCheck": {
+    "path": "/ping",
+    "expected": { "status": "alive" }
+  },
+  "environment": {
+    "required": [
+      "SUPABASE_URL",
+      "SUPABASE_SERVICE_ROLE_KEY"
+    ],
+    "optional": [
+      "GEMINI_API_KEY",
+      "GEMINI_MODEL",
+      "CLIENT_ORIGIN",
+      "ALLOWED_PAIR_NUMBERS",
+      "WA_SESSION_DIR"
+    ],
+    "defaults": {
+      "PORT": 10000,
+      "WA_SESSION_DIR": "/app/.sessions",
+      "GEMINI_MODEL": "gemini-1.5-flash"
+    }
+  },
+  "persistence": {
+    "volume": "whatsapp-sessions",
+    "mountPath": "/app/.sessions",
+    "purpose": "Persist whatsapp-web.js LocalAuth session files so bots do not require re-pairing after each redeploy.",
+    "required": true
+  },
+  "deploy": {
+    "steps": [
+      "Create a Back4App App and choose the Docker/container deploy type.",
+      "Point the deploy at the repo `whatsapp-bot-backend` (or upload the Dockerfile).",
+      "Set the required env vars listed above (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, GEMINI_API_KEY).",
+      "Attach a persistent volume and mount it at /app/.sessions (or $WA_SESSION_DIR).",
+      "Expose port 10000 and set the health check path to /ping.",
+      "Deploy, then verify: GET https://<app>.back4app.io/ping -> { \"status\": \"alive\" }."
+    ]
+  },
+  "verify": {
+    "ping": "GET /ping -> { \"status\": \"alive\" }",
+    "pair": "POST /api/bot/pair  { phoneNumber, botId } -> { success, pairingCode }",
+    "status": "GET /api/bot/status/:botId -> { bot, isReady, stats }"
+  }
+}

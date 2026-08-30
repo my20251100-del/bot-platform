@@ -12,6 +12,14 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Generated WhatsApp/session artifacts (not source code):
+    "sessions/**",
+    "engine.log",
+    "server/.wwebjs_auth/**",
+    "server/.wwebjs_cache/**",
+    "server/.sessions/**",
+    "server/node_modules/**",
+    "server/.env",
   ]),
 ]);
 

@@ -1,0 +1,43 @@
+# =============================================================
+# Render blueprint — WhatsApp Bot backend
+# -------------------------------------------------------------
+# Uses the Docker runtime so Chromium + whatsapp-web.js work.
+# Place this at the repo root (the service points its rootDir at
+# the server/ folder).
+# =============================================================
+services:
+  - type: web
+    name: whatsapp-bot-backend-express
+    runtime: docker
+    rootDir: server
+    plan: starter
+    envVars:
+      - key: SUPABASE_URL
+        sync: false            # set in Render dashboard
+        value: https://your-project.supabase.co
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false            # set in Render dashboard
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: CLIENT_ORIGIN
+        sync: false            # set in Render dashboard
+        value: https://bot-platform-delta.vercel.app
+      - key: WA_SESSION_DIR
+        value: /opt/sessions
+      - key: PORT
+        value: 10000
+    disk:
+      name: whatsapp-sessions
+      mountPath: /opt/sessions
+      sizeGB: 1
+
+  # Keep the free/Starter web service awake by pinging /ping .
+  - type: cron
+    name: keep-awake
+    runtime: docker
+    schedule: "*/10 * * * *"
+    envVars:
+      - key: PING_URL
+        value: https://whatsapp-bot-backend-express.onrender.com/ping
+    dockerCommand: >
+      curl -fsS $PING_URL || exit 1

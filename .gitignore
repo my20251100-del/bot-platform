@@ -35,6 +35,19 @@ yarn-error.log*
 
 # vercel
 .vercel
+.vercel-token
+
+# whatsapp-web.js local sessions (parallel Express backend)
+/server/node_modules/
+/server/.sessions/
+/server/.env
+/server/.wwebjs_auth/
+/server/.wwebjs_cache/
+
+# root Baileys engine sessions (engine/index.mjs runtime data)
+/sessions/
+/engine.log
+/vps/
 
 # typescript
 *.tsbuildinfo
