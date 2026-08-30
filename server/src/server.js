@@ -83,8 +83,12 @@ app.use((err, _req, res, _next) => {
 // ---------------------------------------------------------------------------
 // Boot + graceful shutdown
 // ---------------------------------------------------------------------------
-const server = app.listen(PORT, () => {
-  console.log(`🚀 WhatsApp Bot backend listening on :${PORT}`);
+// Bind to 0.0.0.0 by default so cloud platforms (Back4App/Render) can route
+// external traffic into the container regardless of the local interface. Allow
+// overriding via HOST env (e.g. set HOST=0.0.0.0 in the dashboard if needed).
+const HOST = (process.env.HOST || "0.0.0.0").trim();
+const server = app.listen(PORT, HOST, () => {
+  console.log(`🚀 WhatsApp Bot backend listening on ${HOST}:${PORT}`);
   console.log(`   Ping endpoint → GET /ping`);
 });
 

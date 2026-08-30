@@ -55,10 +55,13 @@ RUN npm install --omit=dev && npx puppeteer browsers install chrome
 COPY src ./src
 COPY .env.example ./
 
-# Render injects the real env; this just guarantees a sane default.
+# Render/Back4App inject the real PORT env; this just guarantees a sane default.
+# IMPORTANT: do NOT hardcode PORT here. The platform routes external traffic to
+# the port set in its dashboard settings, so the app must honor process.env.PORT
+# (server.js does: `Number(process.env.PORT) || 3000`). A hardcoded value here
+# can mismatch the platform's routing port and cause external 404s.
 ENV NODE_ENV=production
-ENV PORT=10000
 
-EXPOSE 10000
+EXPOSE ${PORT:-10000}
 
 CMD ["node", "src/server.js"]

@@ -26,7 +26,6 @@
       "WA_SESSION_DIR"
     ],
     "defaults": {
-      "PORT": 10000,
       "WA_SESSION_DIR": "/app/.sessions",
       "GEMINI_MODEL": "gemini-1.5-flash"
     }
@@ -43,7 +42,7 @@
       "Point the deploy at the repo `whatsapp-bot-backend` (or upload the Dockerfile).",
       "Set the required env vars listed above (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, GEMINI_API_KEY).",
       "Attach a persistent volume and mount it at /app/.sessions (or $WA_SESSION_DIR).",
-      "Expose port 10000 and set the health check path to /ping.",
+      "Expose the port set in the Back4App dashboard settings (e.g. 8080 or 10000) and set the health check path to /ping. The Dockerfile no longer hardcodes PORT, so the app listens on the port the platform injects via PORT env.",
       "Deploy, then verify: GET https://<app>.back4app.io/ping -> { \"status\": \"alive\" }."
     ]
   },
