@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdmin } from "@/lib/supabase/admin";
+import { normalizePhoneNumber, isValidWhatsAppPhone } from "@/lib/phone";
 
 export const runtime = "nodejs";
 
@@ -11,8 +12,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "أدخل رقم الهاتف وكلمة السر" }, { status: 400 });
     }
 
-    const digits = String(number).replace(/\D/g, "").replace(/^0+/, "");
-    if (digits.length < 7) {
+    const digits = normalizePhoneNumber(number);
+    if (!isValidWhatsAppPhone(digits)) {
       return NextResponse.json({ error: "رقم غير صالح" }, { status: 400 });
     }
 

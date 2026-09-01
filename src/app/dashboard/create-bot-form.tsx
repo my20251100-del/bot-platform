@@ -4,14 +4,22 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
-export default function CreateBotForm() {
+export default function CreateBotForm({ hasBot = false }: { hasBot?: boolean }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
-  const [linkMethod, setLinkMethod] = useState<"qr" | "pair_code">("pair_code");
+  const [linkMethod, setLinkMethod] = useState<"pair_code" | "qr">("pair_code");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  if (hasBot) {
+    return (
+      <div className="card glass p-4 text-center border-accent/30 text-sm text-muted">
+        <span className="text-accent font-semibold">🔒 تنبيه:</span> يُسمح ببوت واحد فقط لكل حساب. يمكنك إدارة بوتك الحالي من القائمة أدناه.
+      </div>
+    );
+  }
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -22,24 +30,39 @@ export default function CreateBotForm() {
     const {
       data: { user },
     } = await supabase.auth.getUser();
-    if (!user) return;
+    if (!user) {
+      setLoading(false);
+      return setError("يجب تسجيل الدخول أولاً");
+    }
+
+    // فحص ما إذا كان للمستخدم بوت مسبقاً لمنع التكرار
+    const { data: existingBots } = await supabase
+      .from("bots")
+      .select("id")
+      .eq("user_id", user.id);
+
+    if (existingBots && existingBots.length > 0) {
+      setLoading(false);
+      return setError("لديك بوت بالفعل — يُسمح ببوت واحد فقط لكل حساب");
+    }
 
     // كود اقتران مؤقت يُستبدل عند بدء الربط الفعلي
     const pairCode = linkMethod === "pair_code"
       ? Array.from({ length: 8 }, () => Math.floor(Math.random() * 10)).join("")
       : null;
 
-    const { error } = await supabase.from("bots").insert({
+    const { error: insErr } = await supabase.from("bots").insert({
       user_id: user.id,
       name,
-      phone: phone || null,
+      phone: phone ? phone.replace(/\D/g, "") : null,
       link_method: linkMethod,
       status: "pending",
       pair_code: pairCode,
+      command: "start",
     });
 
     setLoading(false);
-    if (error) return setError(error.message);
+    if (insErr) return setError(insErr.message);
     setOpen(false);
     setName("");
     setPhone("");

@@ -14,10 +14,10 @@ export default function StartPage() {
             className="mx-auto mb-5 grid h-20 w-20 place-items-center rounded-3xl bg-gradient-to-br from-accent to-cyber text-4xl shadow-lg shadow-accent/50"
             style={{ animation: "glow-pulse 2.5s infinite" }}
           >
-            💀
+            🤖
           </div>
-          <h1 className="cyber-title text-4xl font-bold sm:text-5xl">M aknoon</h1>
-          <p className="mt-3 text-muted">نظام الأمن السيبراني لحماية واتسابك</p>
+          <h1 className="cyber-title text-4xl font-bold sm:text-5xl">بوت برو</h1>
+          <p className="mt-3 text-muted">أتمتة واتساب مبسّطة — اربط وانشر خلال 30 ثانية</p>
         </div>
 
         <div
@@ -25,11 +25,11 @@ export default function StartPage() {
           style={{ animation: "fade-up 0.5s ease 0.3s both" }}
         >
           {[
-            { icon: "👁️", t: "مشاهدة الحالات", d: "يشاهد كل ستوري جهاتك تلقائياً دون فتح جوالك." },
-            { icon: "🛡️", t: "حماية مجموعاتك", d: "جدار حماية + قاموس كلمات + مكافحة تعديل وإشارة." },
-            { icon: "🚫", t: "مضاد الحذف والنظرة الواحدة", d: "تظهر لك الأدلة حتى بعد حذفها." },
-            { icon: "📵", t: "رفض المكالمات", d: "لا أحد يكتشف رقمك — المكالمات تُرفض تلقائياً." },
-            { icon: "🧠", t: "رد ذكي", d: "ردود تلقائية بالذكاء الاصطناعي." },
+            { icon: "👁️", t: "مضاد العرض مرة واحدة", d: "شاهد الوسائط المقيدة بسهولة دون أن يعرف المرسل." },
+            { icon: "🛡️", t: "مضاد الحذف", d: "تتبع الرسائل المحذوفة واحتفظ بها حتى بعد حذفها من الجميع." },
+            { icon: "🔐", t: "التحكم بالخصوصية", d: "تحكم كامل بظهورك: علامات القراءة، حالة الكتابة، وآخر ظهور." },
+            { icon: "📥", t: "أدوات الوسائط", d: "حمّل الوسائط من المنصات الاجتماعية مباشرة عبر بوتك." },
+            { icon: "❤️", t: "تفاعل تلقائي", d: "تفاعلات آلية مع الحالات والرسائل بالإيموجي الذي تختاره." },
           ].map((f, i) => (
             <div
               key={f.t}

@@ -1,0 +1,279 @@
+"use client";
+
+import { useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { Particles } from "@/components/ui/cyber-button";
+import { useToast } from "@/components/ui/toast";
+
+export default function LoginClient() {
+  const router = useRouter();
+  const { toast } = useToast();
+  const [step, setStep] = useState<"form" | "otp">("form");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPw, setShowPw] = useState(false);
+  const [otp, setOtp] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [shake, setShake] = useState(false);
+
+  async function handleForgot() {
+    if (!email.trim()) {
+      toast("اكتب بريدك أولاً ثم اضغط نسيت كلمة السر");
+      return;
+    }
+    setLoading(true);
+    try {
+      await fetch("/api/login/step1", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password: "reset-check" }),
+      });
+    } catch {}
+    setLoading(false);
+    const { createClient } = await import("@/lib/supabase/client");
+    const supabase = createClient();
+    const { error: rErr } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: window.location.origin + "/auth/callback?next=%2Fdashboard",
+    });
+    if (rErr) {
+      setError("تعذّر إرسال الرابط، تأكد من البريد وحاول مجدداً");
+      return;
+    }
+    toast("أرسلنا لك رابط استعادة كلمة السر 👈 تحقق من بريدك");
+  }
+
+  async function handleOAuth(provider: "google" | "github") {
+    setError(null);
+    setLoading(true);
+    try {
+      const { createClient } = await import("@/lib/supabase/client");
+      const supabase = createClient();
+      const { error: oauthError } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback?next=%2Fdashboard`,
+        },
+      });
+      if (oauthError) throw oauthError;
+    } catch (e: any) {
+      setLoading(false);
+      setError(e?.message || `تعذّر تسجيل الدخول عبر ${provider === "google" ? "Google" : "GitHub"}`);
+    }
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await fetch("/api/login/step1", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+      if (!data?.success) {
+        setError(data?.message || "حدث خطأ بسيط، حاول مرة أخرى");
+        setShake(true);
+        setTimeout(() => setShake(false), 450);
+        return;
+      }
+      setStep("otp");
+      toast(data.message || "أرسلنا رمز التحقق إلى واتسابك 👈 أدخله");
+    } catch {
+      setError("حدث خطأ، حاول مجدداً");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleVerify(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await fetch("/api/login/step2", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password, code: otp }),
+      });
+      const data = await res.json();
+      if (!data?.success) {
+        setError(data?.message || "الرمز غير صحيح");
+        setShake(true);
+        setTimeout(() => setShake(false), 450);
+        return;
+      }
+      toast("أهلاً بعودتك 👋");
+      router.push("/dashboard");
+      router.refresh();
+    } catch {
+      setError("حدث خطأ، حاول مجدداً");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const inputCls = `w-full rounded-xl border border-border bg-surface px-4 py-3 text-sm text-fg outline-none transition placeholder:text-muted/60 focus:border-accent focus:ring-2 focus:ring-accent/20 ${shake ? "border-blood !ring-blood/30" : ""}`;
+
+  return (
+    <>
+      {/* البصمة البصرية (يسار في RTL — تظهر فقط على الجوال) */}
+      <div className="mb-8 text-center md:hidden">
+        <div className="pointer-events-none mx-auto h-42 w-42">
+          <Particles count={20} />
+          <div className="grid h-42 w-42 place-items-center rounded-3xl bg-gradient-to-br from-accent/20 to-cyber/20 text-6xl shadow-lg shadow-accent/30" style={{ animation: "glow-pulse 2.5s infinite" }}>
+            🤖
+          </div>
+        </div>
+      </div>
+
+      <div className="card p-5 sm:p-10 reveal w-full">
+        <h1 className="text-2xl sm:text-3xl font-bold">مرحباً بعودتك</h1>
+        <p className="mt-1.5 text-sm sm:text-base text-muted">سجّل الدخول لإدارة بوتاتك.</p>
+
+        <div className="mt-6 w-full">
+          {step === "otp" ? (
+            <form onSubmit={handleVerify} className="space-y-4">
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-muted">رمز التحقق (وصل واتسابك)</label>
+                <input
+                  dir="ltr"
+                  inputMode="numeric"
+                  placeholder="000000"
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  required
+                  className={`${inputCls} text-center text-2xl tracking-[0.5em]`}
+                />
+              </div>
+              {error && <p className="rounded-lg border border-blood/40 bg-blood/10 px-3 py-2 text-sm text-red-300" style={{ animation: "fade-in 0.3s ease" }}>{error}</p>}
+              <button
+                type="submit"
+                disabled={loading}
+                className="btn-primary flex w-full items-center justify-center gap-2"
+              >
+                {loading ? "جارٍ التحقق..." : "تأكيد الرمز"}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setStep("form"); setOtp(""); setError(null); }}
+                className="w-full text-center text-sm text-muted hover:text-white"
+              >
+                ← العودة لتسجيل الدخول
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-muted">البريد الإلكتروني</label>
+                <input
+                  type="email"
+                  dir="ltr"
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  autoComplete="username"
+                  className={inputCls}
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-muted">كلمة المرور</label>
+                <div className="relative">
+                  <input
+                    type={showPw ? "text" : "password"}
+                    dir="ltr"
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    autoComplete="current-password"
+                    className={`${inputCls} pe-12`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPw(!showPw)}
+                    className="absolute inset-y-0 end-0 flex items-center px-4 text-muted transition hover:text-fg focus:outline-none"
+                    aria-label={showPw ? "إخفاء" : "إظهار"}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      {showPw ? (
+                        <>
+                          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                          <line x1="1" y1="1" x2="23" y2="23" />
+                        </>
+                      ) : (
+                        <>
+                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                          <circle cx="12" cy="12" r="3" />
+                        </>
+                      )}
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <div className="text-end">
+                <button
+                  type="button"
+                  onClick={handleForgot}
+                  disabled={loading}
+                  className="text-sm font-medium text-accent hover:underline disabled:opacity-50"
+                >
+                  نسيت كلمة السر؟
+                </button>
+              </div>
+              {error && <p className="rounded-lg border border-blood/40 bg-blood/10 px-3 py-2 text-sm text-red-300" style={{ animation: "fade-in 0.3s ease" }}>{error}</p>}
+              <button
+                type="submit"
+                disabled={loading}
+                className="btn-primary flex w-full items-center justify-center gap-2"
+              >
+                {loading ? "جارٍ إرسال الرمز..." : "تسجيل الدخول"}
+              </button>
+
+              <div className="relative my-4">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-border" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase text-muted">
+                  <span className="bg-surface px-2">أو</span>
+                </div>
+              </div>
+
+              <div className="grid gap-2 sm:grid-cols-2">
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={() => handleOAuth("google")}
+                  className="flex items-center justify-center gap-2 rounded-xl border border-border bg-surface px-4 py-3 text-sm font-medium text-fg transition hover:border-accent/50 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <span aria-hidden="true">G</span>
+                  Google
+                </button>
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={() => handleOAuth("github")}
+                  className="flex items-center justify-center gap-2 rounded-xl border border-border bg-surface px-4 py-3 text-sm font-medium text-fg transition hover:border-accent/50 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <span aria-hidden="true">◉</span>
+                  GitHub
+                </button>
+              </div>
+
+              <p className="mt-1 text-center text-xs text-muted">🔒 نتحقق من هويتك برمز يُرسل لواتسابك في كل دخول.</p>
+            </form>
+          )}
+        </div>
+
+        <p className="mt-6 text-center text-sm text-muted">
+          ليس لديك حساب؟{" "}
+          <Link href="/signup" className="font-medium text-accent hover:underline">أنشئ حساباً مجانياً</Link>
+        </p>
+      </div>
+    </>
+  );
+}

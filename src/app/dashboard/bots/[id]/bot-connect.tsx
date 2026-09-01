@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import type { PairResult } from "@/lib/backend";
 
 type BotRow = {
   id: string;
@@ -28,10 +29,8 @@ const statusLabels: Record<string, string> = {
 export default function BotConnect({ initial }: { initial: BotRow }) {
   const [bot, setBot] = useState<BotRow>(initial);
   const [busy, setBusy] = useState(false);
-  const [backendDown, setBackendDown] = useState(false);
-
-  // الحالة الحقيقية تأتي من الـ Backend / WhatsApp Client عند توفّره،
-  // وإلا نكتفي بحالة صف الـ bots في Supabase (fallback للرسم الفوري).
+  
+  // الحالة الحقيقية تأتي من Supabase مباشرة (لا خلفية خارجية بعد الآن).
   const refresh = useCallback(async () => {
     const supabase = createClient();
     const { data } = await supabase
@@ -41,26 +40,8 @@ export default function BotConnect({ initial }: { initial: BotRow }) {
       )
       .eq("id", initial.id)
       .single();
-    if (data) setBot(data);
-
-    // الاستعلام عن الحالة الحقيقية من الـ Backend (ما لم يكن معطّلاً).
-    try {
-      const { fetchBotStatus, fetchBotQr } = await import("@/lib/backend");
-      const [statusRes, qrRes] = await Promise.all([
-        fetchBotStatus(initial.id),
-        fetchBotQr(initial.id),
-      ]);
-      setBackendDown(false);
-      setBot((prev) => ({
-        ...prev,
-        // الـ isReady الحقيقي يعين حالة العرض؛ متصلاً فقط إذا كان الـ client ready.
-        status: statusRes.isReady ? "connected" : prev.status,
-        // الـ QR الحقيقي يأتي من ذاكرة الـ Backend (إن وُجد).
-        qr: qrRes.available ? qrRes.qr ?? prev.qr : prev.qr,
-      }));
-    } catch {
-      setBackendDown(true);
-      // لا نقطع — نعتمد على حالة Supabase المحلية.
+    if (data) {
+      setBot(data);
     }
   }, [initial.id]);
 
@@ -94,16 +75,14 @@ export default function BotConnect({ initial }: { initial: BotRow }) {
       try {
         const { initBot } = await import("@/lib/backend");
         await initBot(bot.id);
-        setBackendDown(false);
-      } catch (initErr) {
+              } catch (initErr) {
         console.warn("[init] backend غير متاح:", initErr);
-        setBackendDown(true);
-      }
+              }
       // 3) إن كان الربط عبر كود اقتران برقم، اطلب الكود من الـ Backend.
       if (bot.link_method === "pair_code" && bot.linked_number) {
         try {
           const { requestPairing } = await import("@/lib/backend");
-          const pair = await requestPairing(bot.id, bot.linked_number);
+          const pair: PairResult = await requestPairing(bot.id, bot.linked_number);
           if (pair.pairingCode) {
             await supabase
               .from("bots")
@@ -135,11 +114,7 @@ export default function BotConnect({ initial }: { initial: BotRow }) {
 
   return (
     <div className="card mb-6 p-6">
-      {backendDown && (
-        <p className="mb-4 rounded-lg bg-red-500/10 px-4 py-2 text-sm text-red-400">
-          ⚠️ الـ Backend غير متاح — لن تتمكن من ربط/تشغيل البوت فعلياً الآن.
-        </p>
-      )}
+
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <span

@@ -47,7 +47,7 @@ export default function DashboardLive({
       <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
         <div>
           <Reveal delay={0}>
-            <h1 className="text-2xl font-bold">أهلاً{fullName ? `، ${fullName}` : "، M aknoon"} 👋</h1>
+            <h1 className="text-2xl font-bold">أهلاً{fullName ? `، ${fullName}` : " بك"} 👋</h1>
           </Reveal>
           <Reveal delay={0.2}>
             <p className="mt-1 flex items-start gap-2 text-sm text-accent/90">
@@ -98,7 +98,7 @@ export default function DashboardLive({
       </div>
 
       <Reveal delay={0.6}>
-        <CreateBotForm />
+        <CreateBotForm hasBot={bots.length > 0} />
       </Reveal>
 
       <Reveal delay={0.7}>

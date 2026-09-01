@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { normalizePhoneNumber } from "@/lib/phone";
 
 export const runtime = "nodejs";
 
@@ -45,10 +46,10 @@ export async function POST(req: NextRequest) {
     const supabase = await createClient();
     const { error: signErr } = await supabase.auth.signInWithPassword({ email, password });
     if (signErr)
-      return NextResponse.json({ error: "حدث خطأ أثناء الدخول" }, { status: 401 });
+      return NextResponse.json({ success: false, code: "LOGIN_FAILED", message: "حدث خطأ أثناء الدخول" }, { status: 401 });
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ success: true, message: "تم تسجيل الدخول بنجاح" });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ success: false, code: "VERIFY_FAILED", message: e.message || "حدث خطأ أثناء التحقق" }, { status: 500 });
   }
 }

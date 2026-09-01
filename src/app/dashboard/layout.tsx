@@ -23,7 +23,7 @@ export default async function DashboardLayout({
             <span className="grid h-9 w-9 place-items-center rounded-xl bg-accent text-accent-fg shadow-lg shadow-accent/30 cyber-title">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22.27 21.73 3.53 3a10.62 10.62 0 0 1-1.3 2.32L9 16l1-2-1.7 3.5a10.5 10.5 0 0 0 2.6 3.9h2.2a10.5 10.5 0 0 0 4.9-2.9l.3.3Z"/><path d="M2 8h3l2 5"/><path d="M21 8h-3l-1.5-3.5"/><path d="M3 3l18 18"/></svg>
             </span>
-            <span className="text-lg font-bold cyber-title">M aknoon</span>
+            <span className="text-lg font-bold cyber-title">بوت برو</span>
           </Link>
 
           <nav className="flex flex-col gap-1">
@@ -56,7 +56,7 @@ export default async function DashboardLayout({
 
       {/* الشريط العلوي للجوال */}
       <div className="fixed inset-x-0 top-0 z-40 flex h-14 items-center justify-between border-b border-border/60 bg-bg/90 px-4 backdrop-blur md:hidden">
-        <span className="font-bold cyber-title">M aknoon</span>
+        <span className="font-bold cyber-title">بوت برو</span>
         <Link href="/dashboard" className="rounded-lg px-3 py-1.5 text-muted">الرئيسية</Link>
         <span className="text-muted"><LogoutButton /></span>
       </div>
@@ -71,8 +71,8 @@ export default async function DashboardLayout({
       <footer className="border-t border-border/60 py-6">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-4 text-center text-xs text-muted sm:flex-row sm:text-left">
           <div className="flex items-center gap-2 font-semibold">
-            <span className="text-accent">💀</span>
-            <span>M aknoon — نظام الأمن السيبراني</span>
+            <span className="text-accent">🤖</span>
+            <span>بوت برو — منصة أتمتة بوتات واتساب</span>
           </div>
           <div className="flex items-center gap-4">
             <span className="flex items-center gap-1.5">

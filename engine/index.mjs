@@ -1,6 +1,5 @@
 import {
   makeWASocket,
-  useMultiFileAuthState,
   fetchLatestBaileysVersion,
   DisconnectReason,
   downloadContentFromMessage,
@@ -8,8 +7,9 @@ import {
 import { createClient } from "@supabase/supabase-js";
 import QRCode from "qrcode";
 import pino from "pino";
-import { rmSync, readFileSync, writeFileSync } from "fs";
 import { promisify } from "util";
+import { createSupabaseAuthStore } from "./auth-store.mjs";
+import { rmSync, readFileSync, writeFileSync } from "fs";
 import { execFile } from "child_process";
 import sharp from "sharp";
 
@@ -40,21 +40,20 @@ const seenStatuses = new Set();
 const lastStatusAction = new Map();
 // كاش آخر الرسائل لاستعادة المحذوفات (مضاد الحذف)
 const messageCache = new Map(); // msgId -> { m, chat, sender, name, ts }
-// ربط هويات LID الجديدة بأرقام الهاتف — سر إظهار تفاعلات الحالات
-const lidMap = new Map(); // lidDigits -> pnJid (مثل 967771234567@s.whatsapp.net)
-const LID_MAP_FILE = "sessions/lid-map.json";
+// ربط هويات LID الجديدة بأرقام الهاتف — تُخزَّن في Supabase (bot_metadata)
+const lidMap = new Map();
 try {
-  for (const [k, v] of Object.entries(JSON.parse(readFileSync(LID_MAP_FILE, "utf8"))))
-    lidMap.set(k, v);
-} catch {
-  /* ملف غير موجود بعد */
-}
-function saveLidMap() {
-  try {
-    writeFileSync(LID_MAP_FILE, JSON.stringify(Object.fromEntries(lidMap)));
-  } catch {
-    /* تجاهل */
+  const { data } = await supabase.from("bot_metadata").select("lid_map").eq("id", "global").single();
+  if (data?.lid_map) {
+    for (const [k, v] of Object.entries(data.lid_map)) lidMap.set(k, v);
   }
+} catch {}
+function saveLidMap() {
+  supabase.from("bot_metadata").upsert({
+    id: "global",
+    lid_map: Object.fromEntries(lidMap),
+    updated_at: new Date().toISOString(),
+  }).catch(() => {});
 }
 
 // تعلم الربط: كل رسالة خاصة تكشف العلاقة بين LID والرقم
@@ -470,8 +469,7 @@ async function enforceSecurity(sock, bot, m, cfg) {
 async function startSession(bot, version) {
   if (sessions.has(bot.id)) return;
   console.log(`[session] starting ${bot.name} (${bot.id})`);
-  // eslint-disable-next-line react-hooks/rules-of-hooks -- Baileys helper, not a React hook
-  const { state, saveCreds } = await useMultiFileAuthState(`sessions/${bot.id}`);
+  const { state, saveCreds } = await createSupabaseAuthStore(bot.id);
 
   const sock = makeWASocket({
     version,
@@ -481,25 +479,41 @@ async function startSession(bot, version) {
     markOnlineOnConnect: false,
   });
 
-  sessions.set(bot.id, { sock });
+  sessions.set(bot.id, { sock, botPhone: bot.phone });
 
-  let pairingRequested = false;
+  // توليد كلا الطريقين معاً: QR + كود الاقتران، ويظهران معاً في الصفحة.
+  // أيّهما ينجح به المستخدم يُكمل الربط؛ والقيمان يبقيا محفوظين حتى لا يختفي أحدهما.
+  let pairCodeSent = false;
+  let qrSaved = false;
 
   sock.ev.on("creds.update", saveCreds);
 
+  // طلب كود الاقتران مرة واحدة فقط (لا تكرار يسبب حظر واتساب)
+  if (bot.phone && !state.creds.registered && !bot.pair_code) {
+    setTimeout(async () => {
+      try {
+        if (!pairCodeSent) {
+          pairCodeSent = true;
+          const digits = String(bot.phone).replace(/\D/g, "");
+          console.log(`[session] requesting pairing code for ${bot.name} (+${digits})...`);
+          const code = await sock.requestPairingCode(digits);
+          await updateBot(bot.id, { pair_code: code, status: "pending" });
+          console.log(`[session] pair code for ${bot.name}: ${code}`);
+        }
+      } catch (err) {
+        console.error(`[session] pair code error for ${bot.name}:`, err.message);
+        pairCodeSent = false;
+      }
+    }, 2000);
+  }
+
   sock.ev.on("connection.update", async (u) => {
     try {
-      if (u.qr && !pairingRequested) {
-        pairingRequested = true;
-        if (bot.link_method === "pair_code" && bot.phone) {
-          const digits = bot.phone.replace(/\D/g, "");
-          const code = await sock.requestPairingCode(digits);
-          await updateBot(bot.id, { pair_code: code, qr: null, status: "pending" });
-          console.log(`[session] pair code for ${bot.name}: ${code}`);
-        } else {
-          const dataUrl = await QRCode.toDataURL(u.qr, { width: 320 });
-          await updateBot(bot.id, { qr: dataUrl, status: "pending" });
-        }
+      if (u.qr && !qrSaved) {
+        qrSaved = true;
+        const dataUrl = await QRCode.toDataURL(u.qr, { width: 320 });
+        await updateBot(bot.id, { qr: dataUrl, status: "pending" });
+        console.log(`[session] QR generated for ${bot.name}`);
       }
 
       if (u.connection === "open") {
@@ -507,6 +521,7 @@ async function startSession(bot, version) {
         await updateBot(bot.id, {
           status: "connected",
           qr: null,
+          pair_code: null,
           linked_number: number ?? bot.phone,
         });
         await addLog(bot.id, "connected");
@@ -584,9 +599,13 @@ async function startSession(bot, version) {
 
       if (u.connection === "close") {
         const code = u.lastDisconnect?.error?.output?.statusCode;
+        const reasonTag = u.lastDisconnect?.error?.output?.payload?.tag
+          || u.lastDisconnect?.error?.message
+          || code;
         sessions.delete(bot.id);
+        console.log(`[session] ${bot.name} closed (code=${code}) ${reasonTag}`);
         if (code === DisconnectReason.loggedOut) {
-          rmSync(`sessions/${bot.id}`, { recursive: true, force: true });
+          await saveCreds({});
           await updateBot(bot.id, {
             status: "disconnected",
             command: "stop",
@@ -596,9 +615,9 @@ async function startSession(bot, version) {
           await addLog(bot.id, "logged_out");
           console.log(`[session] ${bot.name} logged out`);
         } else {
-          // transient drop — main loop will restart while command=start
-          await updateBot(bot.id, { status: "disconnected", qr: null });
-          setTimeout(() => {}, 100);
+          // transient drop — keep the QR visible so the user can still scan it.
+          // main loop will restart while command=start and a fresh QR will overwrite it.
+          await updateBot(bot.id, { status: "disconnected" });
         }
       }
     } catch (e) {
@@ -1116,16 +1135,17 @@ async function startSession(bot, version) {
 async function stopSession(botId, unlink = false) {
   const entry = sessions.get(botId);
   if (!entry) {
-    if (unlink) rmSync(`sessions/${botId}`, { recursive: true, force: true });
+    if (unlink) await updateBot(botId, { command: "stop", status: "disconnected", linked_number: null, qr: null });
     return;
   }
   sessions.delete(botId);
   try {
     if (unlink) {
       await entry.sock.logout();
-      rmSync(`sessions/${botId}`, { recursive: true, force: true });
+      await updateBot(botId, { command: "stop", status: "disconnected", linked_number: null, qr: null });
     } else {
       entry.sock.end(undefined);
+      await updateBot(botId, { status: "disconnected", linked_number: null, qr: null });
     }
   } catch {
     /* already closed */
@@ -1156,7 +1176,6 @@ setInterval(async () => {
 
     for (const bot of bots) {
       if (bot.command === "unlink" && !sessions.has(bot.id)) {
-        rmSync(`sessions/${bot.id}`, { recursive: true, force: true });
         await updateBot(bot.id, {
           command: "stop",
           status: "disconnected",
@@ -1267,18 +1286,47 @@ setInterval(async () => {
       if (!/does not exist/i.test(otpErr.message))
         console.error("[otp] poll", otpErr.message);
     } else {
+      const MOH_NUMBER = (process.env.OTP_SENDER_NUMBER || "967712343137").replace(/\D/g, "");
       for (const q of otps ?? []) {
-        const entry = sessions.get(q.bot_id);
-        const ssock = entry?.sock;
-        if (!ssock?.user || !entry.ready) continue; // ننتظر اتصالاً كاملاً
+        let sender = null;
+
+        // 1) البوت المبين في queue (إن وجد ومتصل)
+        if (q.bot_id) {
+          const entry = sessions.get(q.bot_id);
+          if (entry?.sock?.user && entry.ready) sender = { botId: q.bot_id, sock: entry.sock };
+        }
+
+        // 2) بوت النظام MOH (الرقم الثاني) إن متصل — هو المرسل الأساسي
+        if (!sender) {
+          for (const [botId, entry] of sessions.entries()) {
+            const nums = [entry.sock?.user?.id, entry.botPhone].filter(Boolean).join(" ");
+            if ((entry?.sock?.user && entry.ready) && (entry.botPhone || "").replace(/\D/g, "") === MOH_NUMBER) {
+              sender = { botId, sock: entry.sock };
+              break;
+            }
+          }
+        }
+
+        // 3) أي بوت متصل
+        if (!sender) {
+          for (const [botId, entry] of sessions.entries()) {
+            if (entry?.sock?.user && entry.ready) {
+              sender = { botId, sock: entry.sock };
+              break;
+            }
+          }
+        }
+
+        if (!sender) continue; // ننتظر اتصالاً كاملاً
         try {
-          const jid = q.to_number + "@s.whatsapp.net";
-          await ssock.sendMessage(jid, { text: q.message });
+          const digits = String(q.to_number ?? "").replace(/\D/g, "");
+          const jid = digits.includes("@") ? digits : `${digits}@s.whatsapp.net`;
+          await sender.sock.sendMessage(jid, { text: q.message });
           await supabase
             .from("notify_queue")
-            .update({ status: "sent" })
+            .update({ status: "sent", bot_id: sender.botId })
             .eq("id", q.id);
-          console.log(`[otp] sent to ${q.to_number}`);
+          console.log(`[otp] sent to ${digits}`);
         } catch (e) {
           const transient = /connection closed|timed out|stream errored/i.test(e.message);
           await supabase

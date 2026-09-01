@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Particles } from "@/components/ui/cyber-button";
+import type { PairResult } from "@/lib/backend";
 
 type BotState = {
   id: string;
@@ -75,7 +76,7 @@ export default function ConnectPage() {
       if (nextBot?.id && nextBot.link_method === "pair_code") {
         try {
           const { requestPairing } = await import("@/lib/backend");
-          const pair = await requestPairing(nextBot.id, number);
+          const pair: PairResult = await requestPairing(nextBot.id, number);
           if (pair.pairingCode) {
             nextBot = { ...nextBot, pair_code: pair.pairingCode, isPending: true };
           } else if (pair.error) {
@@ -109,7 +110,7 @@ export default function ConnectPage() {
 
         <div style={{ animation: "fade-up 0.5s ease both" }}>
           <h1 className="cyber-title text-3xl font-bold">ربط واتسابك</h1>
-          <p className="mt-2 text-sm text-muted">أدخل رقمك لربط بوت M aknoon بحسابك.</p>
+          <p className="mt-2 text-sm text-muted">أدخل رقمك لربط بوت برو بحسابك.</p>
         </div>
 
         {step === "input" && (
@@ -158,21 +159,27 @@ export default function ConnectPage() {
               {statusLabels[bot.status]}
             </span>
 
-            {bot.qr ? (
-              <>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={bot.qr} alt="QR" width={240} height={240} className="rounded-xl bg-white p-3" />
-                <p className="text-sm text-muted">واتساب ← الإعدادات ← الأجهزة المرتبطة ← ربط جهاز ← امسح الرمز</p>
-              </>
-            ) : bot.pair_code ? (
-              <>
-                <p className="text-sm text-muted">أدخل هذا الكود في جوالك:</p>
-                <p dir="ltr" className="font-mono text-4xl font-bold tracking-[0.35em] text-accent">{bot.pair_code}</p>
-                <p className="text-sm text-muted">واتساب ← الإعدادات ← الأجهزة المرتبطة ← ربط برقم الهاتف</p>
-              </>
-            ) : (
-              <p className="animate-pulse text-sm text-muted">جارٍ توليد الكود…</p>
-            )}
+            <div className="flex flex-col items-center gap-5">
+              {bot.qr && (
+                <div className="flex flex-col items-center gap-2">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={bot.qr} alt="QR" width={240} height={240} className="rounded-xl bg-white p-3" />
+                  <p className="text-sm text-muted">المسح: واتساب ← الأجهزة المرتبطة ← ربط جهاز ← امسح الرمز</p>
+                </div>
+              )}
+
+              {bot.pair_code && (
+                <div className="flex w-full flex-col items-center gap-2 border-t border-border pt-4">
+                  <p className="text-sm text-muted">أو أدخل هذا الكود في جوالك:</p>
+                  <p dir="ltr" className="font-mono text-4xl font-bold tracking-[0.35em] text-accent">{bot.pair_code}</p>
+                  <p className="text-sm text-muted">واتساب ← الأجهزة المرتبطة ← ربط برقم الهاتف</p>
+                </div>
+              )}
+
+              {!bot.qr && !bot.pair_code && (
+                <p className="animate-pulse text-sm text-muted">جارٍ توليد الكود…</p>
+              )}
+            </div>
           </div>
         )}
 

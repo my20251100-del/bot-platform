@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 
 type S = Record<string, any>;
 
@@ -12,18 +13,18 @@ type Feature = {
 };
 
 const FEATURES: Feature[] = [
-  { key: "autoReply", label: "الرد التلقائي", desc: "يرد تلقائياً على الرسائل الواردة" },
-  { key: "antiDelete", label: "مضاد الحذف", desc: "نسخة من كل رسالة محذوفة تُرسل لك في مراسلة نفسك" },
+  { key: "autoViewStatus", label: "مشاهدة الحالات تلقائياً", desc: "يشاهد كل الستوري فور نشره دون فتح الجوال" },
+  { key: "autoReactStatus", label: "التفاعل مع الحالات", desc: "يضع إيموجي على كل حالة جديدة" },
+  { key: "antiDelete", label: "مضاد الحذف", desc: "نسخة من كل رسالة محذوفة تُرسل لك فوراً" },
   { key: "antiViewOnce", label: "كشف النظرة الواحدة", desc: "حفظ الصور والفيديوهات ذات النظرة الواحدة" },
-  { key: "autoViewStatus", label: "مشاهدة الحالات", desc: "يشاهد كل الستوري فور نشره دون فتح الجوال" },
-  { key: "autoReactStatus", label: "التفاعل مع الحالات", desc: "يضع قلباً ❤️ على كل حالة جديدة" },
-  { key: "autoReact", label: "التفاعل مع الرسائل", desc: "يفاعل مع كل رسالة بالإيموجي المختار" },
-  { key: "smartReply", label: "الرد الذكي", desc: "ردود ذكية بالذكاء الاصطناعي" },
-  { key: "rejectCalls", label: "رفض المكالمات", desc: "يرفض كل المكالمات الواردة تلقائياً" },
-  { key: "privacyMode", label: "وضع الخصوصية", desc: "إخفاء علامات القراءة وحالة الكتابة" },
-  { key: "contactAutoSave", label: "سجل الأرقام", desc: "يدوّن كل رقم جديد يراسلك" },
-  { key: "welcomeGroups", label: "ترحيب المجموعات", desc: "يرحب بكل منضم جديد — استخدم {user} لذكر اسمه" },
-  { key: "autoForward", label: "إعادة النشر", desc: "ينقل منشورات القناة المصدر إلى مجموعاتك" },
+  { key: "autoReply", label: "الرد التلقائي", desc: "يرد تلقائياً برسالتك المحددة عند استلام أي رسالة" },
+  { key: "smartReply", label: "الرد الذكي بالذكاء الاصطناعي", desc: "ردود ذكية تلقائية عبر Gemini" },
+  { key: "autoReact", label: "التفاعل مع الرسائل", desc: "يفاعل مع كل رسالة بالقلب أو الإيموجي المختار" },
+  { key: "rejectCalls", label: "رفض المكالمات تلقائياً", desc: "يرفض كل المكالمات الواردة لحماية خصوصيتك" },
+  { key: "privacyMode", label: "وضع الخصوصية", desc: "إخفاء علامات القراءة وحالة الكتابة وآخر ظهور" },
+  { key: "contactAutoSave", label: "حفظ الأرقام تلقائياً", desc: "يدوّن كل رقم جديد يراسلك في سجلك" },
+  { key: "welcomeGroups", label: "ترحيب المجموعات", desc: "يرحب بكل عضو جديد ينضم لمجموعتك" },
+  { key: "autoForward", label: "إعادة النشر من القنوات", desc: "ينقل المنشورات تلقائياً من القنوات لمجموعاتك" },
 ];
 
 function Toggle({ on, onChange }: { on: boolean; onChange: () => void }) {
@@ -43,6 +44,7 @@ function Toggle({ on, onChange }: { on: boolean; onChange: () => void }) {
 }
 
 export default function SettingClient() {
+  const searchParams = useSearchParams();
   const [number, setNumber] = useState("");
   const [secret, setSecret] = useState("");
   const [step, setStep] = useState<"login" | "panel">("login");
@@ -54,17 +56,14 @@ export default function SettingClient() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  const has = useCallback((k: string) => !!settings[k], [settings]);
-
-  async function login(e: React.FormEvent) {
-    e.preventDefault();
+  const performLogin = useCallback(async (num: string, sec: string) => {
     setErr(null);
     setLoading(true);
     try {
       const res = await fetch("/api/setting", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ number, secret }),
+        body: JSON.stringify({ number: num, secret: sec }),
       });
       const data = await res.json();
       if (!data.ok) {
@@ -80,6 +79,25 @@ export default function SettingClient() {
       setErr("تعذّر الاتصال بالخادم");
     }
     setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    // ملء نموذج الدخول من رابط مباشر (number+secret) مرّة واحدة فقط
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    const qNum = searchParams.get("number");
+    const qSec = searchParams.get("secret");
+    if (qNum) setNumber(qNum);
+    if (qSec) setSecret(qSec);
+    if (qNum && qSec) {
+      performLogin(qNum, qSec);
+    }
+  }, [searchParams, performLogin]);
+
+  const has = useCallback((k: string) => !!settings[k], [settings]);
+
+  async function login(e: React.FormEvent) {
+    e.preventDefault();
+    performLogin(number, secret);
   }
 
   async function save() {
@@ -208,7 +226,7 @@ export default function SettingClient() {
       <main className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-md flex-col justify-center px-4 py-12">
         <div className="text-center">
           <div className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-2xl bg-gradient-to-br from-accent to-cyber text-3xl shadow-lg shadow-accent/40" style={{ animation: "glow-pulse 2.5s infinite" }}>
-            💀
+            🤖
           </div>
           <h1 className="cyber-title text-3xl font-bold">إعدادات بوتك</h1>
           <p className="mt-2 text-sm text-muted">أدخل رقمك وكلمة السر التي وصلكت على الواتساب للدخول.</p>
