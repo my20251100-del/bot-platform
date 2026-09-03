@@ -15,7 +15,13 @@ import { execFile } from "child_process";
 import path from "path";
 import { fileURLToPath } from "url";
 import { createSupabaseAuthStore } from "./auth-store.mjs";
-import sharp from "sharp";
+let sharp = null;
+try {
+  const sharpMod = await import("sharp");
+  sharp = sharpMod.default || sharpMod;
+} catch {
+  // sharp غير متوفر في بيئات مثل Termux (Android)
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -386,25 +392,43 @@ async function makeSticker(input, isVideo) {
         try { rmSync(tmpOut, { force: true }); } catch {}
       }
     }
-    // صورة ثابتة → ملصق WebP عبر sharp
-    const img = sharp(input);
-    const meta = await img.metadata();
-    const w = meta.width, h = meta.height;
-    let sw = w, sh = h;
-    if (w !== h) {
-      const max = 512;
-      if (Math.max(w, h) > max) {
-        const r = max / Math.max(w, h);
-        sw = Math.round(w * r);
-        sh = Math.round(h * r);
-      } else { sw = w; sh = h; }
-    } else { sw = 512; sh = 512; }
-    if (sw % 2) sw += 1;
-    if (sh % 2) sh += 1;
-    return await sharp(input)
-      .resize({ width: sw, height: sh, fit: "cover" })
-      .webp({ quality: 90 })
-      .toBuffer();
+    // صورة ثابتة → ملصق WebP عبر sharp إن وُجد، أو عبر ffmpeg كبديل للأجهزة الضعيفة مثل Termux
+    if (sharp) {
+      const img = sharp(input);
+      const meta = await img.metadata();
+      const w = meta.width, h = meta.height;
+      let sw = w, sh = h;
+      if (w !== h) {
+        const max = 512;
+        if (Math.max(w, h) > max) {
+          const r = max / Math.max(w, h);
+          sw = Math.round(w * r);
+          sh = Math.round(h * r);
+        } else { sw = w; sh = h; }
+      } else { sw = 512; sh = 512; }
+      if (sw % 2) sw += 1;
+      if (sh % 2) sh += 1;
+      return await sharp(input)
+        .resize({ width: sw, height: sh, fit: "cover" })
+        .webp({ quality: 90 })
+        .toBuffer();
+    } else {
+      // بديل عبر ffmpeg للأجهزة التي لا تدعم sharp مثل Termux
+      const tmpIn = `/tmp/stk_in_${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
+      const tmpOut = `/tmp/stk_out_${Date.now()}_${Math.random().toString(36).slice(2)}.webp`;
+      try {
+        writeFileSync(tmpIn, input);
+        await execFileAsync("ffmpeg", [
+          "-y", "-i", tmpIn,
+          "-vf", "scale='min(512,iw)':min'(512,ih)':force_original_aspect_ratio=decrease",
+          "-c:v", "libwebp", "-quality", "90", tmpOut,
+        ], { timeout: 30000, maxBuffer: 1e7 });
+        return readFileSync(tmpOut);
+      } finally {
+        try { rmSync(tmpIn, { force: true }); } catch {}
+        try { rmSync(tmpOut, { force: true }); } catch {}
+      }
+    }
   } catch (e) {
     console.error("[sticker] convert failed:", e.message);
     return null;
