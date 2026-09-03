@@ -249,39 +249,69 @@ export default function BotConnect({ initial }: { initial: BotRow }) {
 
                     {(() => {
                       const rawCode = bot.pair_code.replace(/[^A-Za-z0-9]/g, "");
-                      const displayCode =
-                        rawCode.length === 8
-                          ? `${rawCode.slice(0, 4)}-${rawCode.slice(4)}`
-                          : bot.pair_code;
+                      const chars = rawCode.split("");
                       return (
-                        <div className="flex flex-col sm:flex-row items-center gap-4 rounded-2xl border-2 border-accent/60 bg-surface px-8 py-5 shadow-[0_0_30px_rgba(0,212,255,0.25)]">
-                          <span
-                            dir="ltr"
-                            className="font-mono text-4xl sm:text-6xl font-black tracking-[0.2em] text-accent select-all"
-                          >
-                            {displayCode}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              navigator.clipboard.writeText(rawCode);
-                              setCopied(true);
-                              setTimeout(() => setCopied(false), 2000);
-                            }}
-                            className="rounded-xl bg-accent/20 px-5 py-2.5 text-sm font-bold text-accent transition hover:bg-accent hover:text-accent-fg active:scale-95 shadow-sm"
-                          >
-                            {copied ? "تم النسخ ✓" : "نسخ الكود 📋"}
-                          </button>
+                        <div className="flex w-full flex-col items-center gap-4">
+                          {/* شريط العد التنازلي لصلاحية الكود */}
+                          <div className="w-full max-w-md space-y-1 text-xs">
+                            <div className="flex justify-between font-semibold text-muted">
+                              <span>⏱️ صلاحية الكود (نشط الآن)</span>
+                              <span className="text-accent font-mono">أدخله في واتساب قبل الانتهاء</span>
+                            </div>
+                            <div className="h-2 w-full overflow-hidden rounded-full bg-surface border border-border/80">
+                              <div className="h-full bg-gradient-to-r from-emerald-500 via-accent to-amber-500 animate-pulse w-full" />
+                            </div>
+                          </div>
+
+                          {/* مربعات الكود الفردية على طريقة Red Queen */}
+                          <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3 my-2" dir="ltr">
+                            {chars.map((ch, idx) => (
+                              <div key={idx} className="flex items-center">
+                                {idx === 4 && (
+                                  <span className="text-2xl font-bold text-muted mx-1 sm:mx-2">-</span>
+                                )}
+                                <div className="grid h-12 w-10 sm:h-16 sm:w-14 place-items-center rounded-xl sm:rounded-2xl border-2 border-accent/60 bg-surface/90 shadow-[0_0_15px_rgba(0,212,255,0.25)] text-2xl sm:text-4xl font-mono font-black text-accent transition-all hover:scale-105">
+                                  {ch}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+
+                          <div className="flex items-center gap-3">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(rawCode);
+                                setCopied(true);
+                                setTimeout(() => setCopied(false), 2000);
+                              }}
+                              className="rounded-xl bg-accent px-6 py-3 text-sm font-black text-accent-fg transition hover:opacity-90 active:scale-95 shadow-lg shadow-accent/25 flex items-center gap-2"
+                            >
+                              {copied ? "تم النسخ بنجاح ✓" : "📋 نسخ الكود بنقرة واحدة"}
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleAction("start")}
+                              disabled={busy}
+                              className="rounded-xl border border-border bg-elevated px-4 py-3 text-sm font-semibold hover:text-white transition"
+                              title="طلب كود اقتران بديل"
+                            >
+                              🔄 كود جديد
+                            </button>
+                          </div>
                         </div>
                       );
                     })()}
 
-                    <div className="mt-2 text-xs text-muted max-w-md text-right space-y-1 bg-elevated/40 p-3 rounded-xl border border-border/50">
-                      <p className="font-semibold text-fg">خطوات الربط في هاتفك:</p>
+                    <div className="mt-3 text-xs text-muted max-w-md text-right space-y-1.5 bg-elevated/40 p-4 rounded-xl border border-border/60">
+                      <p className="font-bold text-fg flex items-center gap-1.5">
+                        <span className="text-accent">📱</span> خطوات الاقتران في هاتفك:
+                      </p>
                       <p>1. افتح <strong>واتساب</strong> على الجوال.</p>
                       <p>2. اضغط على <strong>القائمة ⋮</strong> أو <strong>الإعدادات ⚙️</strong> ← <strong>الأجهزة المرتبطة</strong>.</p>
                       <p>3. اختر <strong>ربط جهاز</strong> ثم انقر <strong>&quot;الربط باستخدام رقم الهاتف بدلاً من ذلك&quot;</strong> أسفل الشاشة.</p>
-                      <p>4. أدخل الكود الظاهر أعلاه واضغط تأكيد.</p>
+                      <p>4. أدخل الحروف الظاهرة في المربعات أعلاه بالترتيب وسيرتبط فوراً.</p>
                     </div>
                   </div>
                 ) : (

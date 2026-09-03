@@ -36,25 +36,29 @@ type Settings = {
   workMode: string;
 };
 
-const toggles: { key: keyof Settings; label: string; desc: string }[] = [
-  { key: "autoReply", label: "الرد التلقائي", desc: "يرد تلقائياً على الرسائل الواردة" },
-  { key: "antiDelete", label: "مضاد الحذف", desc: "عند حذف أي شخص لرسالته تُرسل لك نسخة منها فوراً في محادثة مراسلة نفسك" },
-  { key: "antiViewOnce", label: "كشف النظرة الواحدة", desc: "صور وفيديوهات النظرة الواحدة تُحفظ نسخة دائمة منها في مراسلة نفسك لتشاهدها متى شئت" },
-  { key: "autoViewStatus", label: "مشاهدة الحالات تلقائياً", desc: "يشاهد كل الستوري فور نشره دون فتح الجوال" },
-  { key: "autoReactStatus", label: "التفاعل مع الحالات", desc: "يضع إيموجي (قلب ❤️) على كل حالة تُنشر — يتطلب تفعيل المشاهدة أيضاً" },
-  { key: "autoReact", label: "التفاعل مع الرسائل", desc: "يفاعل مع كل رسالة بالإيموجي المختار" },
-  { key: "privacyMode", label: "وضع الخصوصية", desc: "إخفاء علامات القراءة وحالة الكتابة (قريباً)" },
-  { key: "contactAutoSave", label: "سجل الأرقام", desc: "يدوّن كل رقم جديد يراسلك" },
-  { key: "welcomeGroups", label: "ترحيب المجموعات", desc: "يرحب تلقائياً بكل منضم جديد للمجموعات — استخدم {user} لذكر اسمه" },
-  { key: "farewellGroups", label: "وداع المجموعات", desc: "يرسل رسالة وداع عند خروج عضو" },
-  { key: "smartReply", label: "الرد الذكي (ذكاء اصطناعي)", desc: "يرد على عملائك بإجابات ذكية بناءً على معلومات نشاطك — يتطلب مفتاح OPENAI_API_KEY في المحرك" },
-  { key: "autoForward", label: "إعادة النشر التلقائي", desc: "ينقل كل منشور جديد من قناة مصدر إلى مجموعاتك فور نزوله" },
-  { key: "firewallOn", label: "جدار الحماية (Firewall)", desc: "يحذف تلقائياً أي رسالة تحتوي رابطاً لدومين محظور في مجموعاتك" },
-  { key: "dictionaryOn", label: "قاموس الكلمات المحظورة", desc: "يحذف تلقائياً أي رسالة بها كلمة من قائمتك المحظورة في المجموعات" },
-  { key: "rejectCalls", label: "رفض المكالمات", desc: "يرفض كل المكالمات الواردة تلقائياً" },
-  { key: "antiEdit", label: "مكافحة التعديل", desc: "يحذف أي رسالة مُعدَّلة نصها في المجموعات" },
-  { key: "antiMention", label: "مكافحة الإشارة", desc: "يحذف أي رسالة تحتوي إشارة @ في المجموعات" },
-  { key: "showOnline", label: "إظهار متصل", desc: "يبقي حالة البوت على الإنترنت نشطة (قريباً)" },
+type Category = "automation" | "ai" | "security";
+
+const toggles: { key: keyof Settings; label: string; desc: string; category: Category }[] = [
+  { key: "autoReply", label: "الرد التلقائي", desc: "يرد تلقائياً على الرسائل الواردة", category: "automation" },
+  { key: "antiDelete", label: "مضاد الحذف", desc: "عند حذف أي شخص لرسالته تُرسل لك نسخة منها فوراً في محادثة مراسلة نفسك", category: "automation" },
+  { key: "antiViewOnce", label: "كشف النظرة الواحدة", desc: "صور وفيديوهات النظرة الواحدة تُحفظ نسخة دائمة منها في مراسلة نفسك لتشاهدها متى شئت", category: "automation" },
+  { key: "autoViewStatus", label: "مشاهدة الحالات تلقائياً", desc: "يشاهد كل الستوري فور نشره دون فتح الجوال", category: "automation" },
+  { key: "autoReactStatus", label: "التفاعل مع الحالات", desc: "يضع إيموجي (قلب ❤️) على كل حالة تُنشر — يتطلب تفعيل المشاهدة أيضاً", category: "automation" },
+  { key: "autoReact", label: "التفاعل مع الرسائل", desc: "يفاعل مع كل رسالة بالإيموجي المختار", category: "automation" },
+  { key: "privacyMode", label: "وضع الخصوصية", desc: "إخفاء علامات القراءة وحالة الكتابة (قريباً)", category: "automation" },
+  { key: "contactAutoSave", label: "سجل الأرقام", desc: "يدوّن كل رقم جديد يراسلك", category: "automation" },
+  { key: "rejectCalls", label: "رفض المكالمات", desc: "يرفض كل المكالمات الواردة تلقائياً", category: "automation" },
+  { key: "showOnline", label: "إظهار متصل", desc: "يبقي حالة البوت على الإنترنت نشطة (قريباً)", category: "automation" },
+
+  { key: "smartReply", label: "الرد الذكي (ذكاء اصطناعي)", desc: "يرد على عملائك بإجابات ذكية بناءً على معلومات نشاطك ونموذج Gemini", category: "ai" },
+
+  { key: "welcomeGroups", label: "ترحيب المجموعات", desc: "يرحب تلقائياً بكل منضم جديد للمجموعات — استخدم {user} لذكر اسمه", category: "security" },
+  { key: "farewellGroups", label: "وداع المجموعات", desc: "يرسل رسالة وداع عند خروج عضو", category: "security" },
+  { key: "autoForward", label: "إعادة النشر التلقائي", desc: "ينقل كل منشور جديد من قناة مصدر إلى مجموعاتك فور نزوله", category: "security" },
+  { key: "firewallOn", label: "جدار الحماية (Firewall)", desc: "يحذف تلقائياً أي رسالة تحتوي رابطاً لدومين محظور في مجموعاتك", category: "security" },
+  { key: "dictionaryOn", label: "قاموس الكلمات المحظورة", desc: "يحذف تلقائياً أي رسالة بها كلمة من قائمتك المحظورة في المجموعات", category: "security" },
+  { key: "antiEdit", label: "مكافحة التعديل", desc: "يحذف أي رسالة مُعدَّلة نصها في المجموعات", category: "security" },
+  { key: "antiMention", label: "مكافحة الإشارة", desc: "يحذف أي رسالة تحتوي إشارة @ في المجموعات", category: "security" },
 ];
 
 function Toggle({ on, onChange }: { on: boolean; onChange: () => void }) {
@@ -76,9 +80,11 @@ function Toggle({ on, onChange }: { on: boolean; onChange: () => void }) {
 export default function BotSettings({
   botId,
   initial,
+  activeCategory,
 }: {
   botId: string;
   initial: Settings;
+  activeCategory?: Category;
 }) {
   const router = useRouter();
   const [settings, setSettings] = useState<Settings>(initial);
@@ -99,12 +105,23 @@ export default function BotSettings({
     router.refresh();
   }
 
+  const filteredToggles = activeCategory
+    ? toggles.filter((t) => t.category === activeCategory)
+    : toggles;
+
+  const title =
+    activeCategory === "ai"
+      ? "🧠 مساعد الذكاء الاصطناعي (Gemini)"
+      : activeCategory === "security"
+      ? "🛡️ أمان وحماية المجموعات"
+      : "⚡ أتمتة الواتساب الأساسية";
+
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-semibold">أتمتة البوت</h2>
+      <h2 className="text-lg font-semibold">{title}</h2>
 
       <div className="card divide-y divide-border/60">
-        {toggles.map((t) => (
+        {filteredToggles.map((t) => (
           <div key={t.key} className="flex items-center justify-between gap-4 p-4">
             <div>
               <h3 className="font-medium">{t.label}</h3>
