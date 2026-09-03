@@ -17,6 +17,7 @@ export default function LoginClient() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [shake, setShake] = useState(false);
+  const [devOtp, setDevOtp] = useState<string | null>(null);
 
   async function handleForgot() {
     if (!email.trim()) {
@@ -59,7 +60,12 @@ export default function LoginClient() {
       if (oauthError) throw oauthError;
     } catch (e: any) {
       setLoading(false);
-      setError(e?.message || `تعذّر تسجيل الدخول عبر ${provider === "google" ? "Google" : "GitHub"}`);
+      const msg = String(e?.message || "");
+      if (/provider.*not enabled|unsupported provider/i.test(msg)) {
+        setError("تسجيل الدخول عبر Google/GitHub غير مفعّل في إعدادات Supabase حالياً. يرجى استخدام البريد الإلكتروني وكلمة المرور.");
+      } else {
+        setError(e?.message || `تعذّر تسجيل الدخول عبر ${provider === "google" ? "Google" : "GitHub"}`);
+      }
     }
   }
 
@@ -81,7 +87,13 @@ export default function LoginClient() {
         return;
       }
       setStep("otp");
-      toast(data.message || "أرسلنا رمز التحقق إلى واتسابك 👈 أدخله");
+      if (data?.dev_otp) {
+        setDevOtp(data.dev_otp);
+        setOtp(data.dev_otp);
+      } else {
+        setOtp("");
+      }
+      toast(data.message || "أرسلنا رمز التحقق إلى بريدك الإلكتروني 👈 أدخله");
     } catch {
       setError("حدث خطأ، حاول مجدداً");
     } finally {
@@ -101,7 +113,7 @@ export default function LoginClient() {
       });
       const data = await res.json();
       if (!data?.success) {
-        setError(data?.message || "الرمز غير صحيح");
+        setError(data?.message || data?.error || "الرمز غير صحيح");
         setShake(true);
         setTimeout(() => setShake(false), 450);
         return;
@@ -137,8 +149,21 @@ export default function LoginClient() {
         <div className="mt-6 w-full">
           {step === "otp" ? (
             <form onSubmit={handleVerify} className="space-y-4">
+              {devOtp && (
+                <div className="rounded-xl border border-accent/40 bg-accent/10 p-3.5 text-center">
+                  <p className="text-xs text-muted mb-1">💡 رمز التحقق السريع (وضع التجربة):</p>
+                  <button
+                    type="button"
+                    onClick={() => setOtp(devOtp)}
+                    className="font-mono text-2xl font-bold tracking-[0.3em] text-accent hover:underline"
+                  >
+                    {devOtp}
+                  </button>
+                  <p className="text-[11px] text-accent/80 mt-1">تمت تعبئته تلقائياً في الخانة أدناه 🚀</p>
+                </div>
+              )}
               <div>
-                <label className="mb-1.5 block text-sm font-medium text-muted">رمز التحقق (وصل واتسابك)</label>
+                <label className="mb-1.5 block text-sm font-medium text-muted">رمز التحقق (وصل إلى بريدك الإلكتروني)</label>
                 <input
                   dir="ltr"
                   inputMode="numeric"
@@ -264,7 +289,7 @@ export default function LoginClient() {
                 </button>
               </div>
 
-              <p className="mt-1 text-center text-xs text-muted">🔒 نتحقق من هويتك برمز يُرسل لواتسابك في كل دخول.</p>
+              <p className="mt-1 text-center text-xs text-muted">🔒 نتحقق من هويتك برمز يُرسل لبريدك الإلكتروني في كل دخول.</p>
             </form>
           )}
         </div>

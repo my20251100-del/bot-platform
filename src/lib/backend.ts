@@ -48,7 +48,7 @@ export type QrResult = {
 
 // ---- دوال مساعدة ----
 
-async function withError<T>(promise: Promise<T>): Promise<{ data: T; error: null } | { data: null; error: Error }> {
+export async function withError<T>(promise: Promise<T>): Promise<{ data: T; error: null } | { data: null; error: Error }> {
   try {
     const data = await promise;
     return { data, error: null };

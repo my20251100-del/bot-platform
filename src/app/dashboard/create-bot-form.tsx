@@ -46,18 +46,20 @@ export default function CreateBotForm({ hasBot = false }: { hasBot?: boolean }) 
       return setError("لديك بوت بالفعل — يُسمح ببوت واحد فقط لكل حساب");
     }
 
-    // كود اقتران مؤقت يُستبدل عند بدء الربط الفعلي
-    const pairCode = linkMethod === "pair_code"
-      ? Array.from({ length: 8 }, () => Math.floor(Math.random() * 10)).join("")
-      : null;
+    const cleanPhone = phone ? phone.replace(/\D/g, "") : null;
+    if (linkMethod === "pair_code" && (!cleanPhone || cleanPhone.length < 10)) {
+      setLoading(false);
+      return setError("يرجى إدخال رقم واتساب صالح مع رمز الدولة (مثال: +96777xxxxxxx) لطلب كود الاقتران");
+    }
 
     const { error: insErr } = await supabase.from("bots").insert({
       user_id: user.id,
       name,
-      phone: phone ? phone.replace(/\D/g, "") : null,
+      phone: cleanPhone,
       link_method: linkMethod,
       status: "pending",
-      pair_code: pairCode,
+      pair_code: null,
+      qr: null,
       command: "start",
     });
 

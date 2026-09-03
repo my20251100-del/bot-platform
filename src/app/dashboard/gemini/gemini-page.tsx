@@ -7,15 +7,21 @@ import CyberButton from "@/components/ui/cyber-button";
 import { Skeleton } from "@/components/ui/motion";
 
 const DEFAULT_SYSTEM =
-  "أنت موظف خدمة عملاء ودود تجيب بالعربية بإيجاز واحترافية. " +
-  "إذا لم تكن المعلومة موجودة اعتذر بلطف واطلب ترك وسيلة تواصل.";
+  "أنت هو صاحب هذا الرقم شخصياً، ترد من واتسابك الشخصي على أي شخص يراسلك (أصحابك، أهلك، زبائنك، معارفك).\n" +
+  "ممنوع نهائياً أن يلاحظ أحد أو يشك أنك ذكاء اصطناعي أو بوت. أنت إنسان حقيقي 100%.\n" +
+  "- اكتب مثل أي شخص يمني يكتب من جواله بسرعة: عفوي، مختصر، طبيعي جداً (من سطر إلى سطرين أو ثلاثة كحد أقصى).\n" +
+  "- تجنب تماماً القوائم والترقيم وكثرة النجوم والخط العريض والتنسيق الآلي الإنشائي.\n" +
+  "- ممنوع تماماً عبارات الروبوتات مثل 'أنا نموذج لغوي' أو 'كيف يمكنني مساعدتك' أو 'يسعدني خدمتك'.\n" +
+  "- تحدث بلهجة يمنية وعربية دارجة سلسة ومحترمة ومريحة ('يا هلا والله'، 'تسلم يا غالي'، 'أبشر'، 'حبيبي والله'، 'بخير ونعمة الحمد لله'، 'تشتي').\n" +
+  "- تذكر دائماً سياق المحادثة السابقة؛ إذا سألك صاحبك أو مازحك رد عليه بعفوية كصاحبه تماماً.\n" +
+  "- إذا سُئلت عن اليوم أو الوقت أجب مباشرة كإنسان طبيعي ('بكرة الجمعة يا غالي').";
 
 export default function GeminiPage() {
   const router = useRouter();
   const [bots, setBots] = useState<any[]>([]);
   const [selected, setSelected] = useState<string>("");
   const [keysText, setKeysText] = useState("");
-  const [model, setModel] = useState("gemini-1.5-flash");
+  const [model, setModel] = useState("gemini-3.5-flash-lite");
   const [systemPrompt, setSystemPrompt] = useState(DEFAULT_SYSTEM);
   const [smartReply, setSmartReply] = useState(false);
   const [dailyQuota, setDailyQuota] = useState(50);
@@ -26,7 +32,7 @@ export default function GeminiPage() {
   useEffect(() => {
     (async () => {
       const supabase = createClient();
-      const { data } = await supabase.from("bots").select("id,name,linked_number,settings");
+      const { data } = await supabase.from("bots").select("id,name,linked_number,phone,settings");
       const list = data ?? [];
       setBots(list);
       const first = list[0];
@@ -39,7 +45,9 @@ export default function GeminiPage() {
   function load(b: any) {
     const s = b?.settings ?? {};
     setKeysText(Array.isArray(s.geminiKeys) ? s.geminiKeys.filter(Boolean).join("\n") : "");
-    setModel(s.geminiModel || "gemini-1.5-flash");
+    let m = s.geminiModel || "gemini-flash-latest";
+    if (m.includes("1.5") || m.includes("2.0")) m = "gemini-flash-latest";
+    setModel(m);
     setSystemPrompt(s.geminiSystemPrompt || DEFAULT_SYSTEM);
     setSmartReply(!!s.smartReply);
     setDailyQuota(Number(s.geminiDailyQuota) || 50);
@@ -95,7 +103,7 @@ export default function GeminiPage() {
           <div>
             <label className="mb-1.5 block text-sm font-medium">اختر البوت</label>
             <select className="input" value={selected} onChange={(e) => onPick(e.target.value)}>
-              {bots.map((b) => <option key={b.id} value={b.id}>{b.name} — {b.linked_number}</option>)}
+              {bots.map((b) => <option key={b.id} value={b.id}>{b.name} — {b.linked_number || b.phone || "غير متصل"}</option>)}
             </select>
           </div>
 
@@ -118,10 +126,10 @@ export default function GeminiPage() {
           <div>
             <label className="mb-1.5 block text-sm font-medium">الموديل</label>
             <select className="input" value={model} onChange={(e) => setModel(e.target.value)}>
-              <option value="gemini-1.5-flash">gemini-1.5-flash (سريع ومجاني)</option>
-              <option value="gemini-1.5-pro">gemini-1.5-pro</option>
-              <option value="gemini-2.0-flash">gemini-2.0-flash</option>
-              <option value="gemini-2.5-flash">gemini-2.5-flash</option>
+              <option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite (فائق السرعة وفوري — مستحسن ✨)</option>
+              <option value="gemini-3.8-flash">gemini-3.8-flash (الأحدث والأقوى ذكاءً ⚡)</option>
+              <option value="gemini-3.6-flash">gemini-3.6-flash (دقيق وشامل 🧠)</option>
+              <option value="gemini-flash-latest">gemini-flash-latest (الجيل الكلاسيكي)</option>
             </select>
           </div>
 

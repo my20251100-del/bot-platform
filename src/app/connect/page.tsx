@@ -15,13 +15,19 @@ type BotState = {
   qr: string | null;
   isPending: boolean;
   secret: string | null;
+  last_error?: string | null;
+  attempt?: number;
 };
 
 const statusLabels: Record<string, string> = {
   connected: "متصل ✓",
   pending: "بانتظار الربط...",
   disconnected: "غير متصل",
+  failed: "فشل الاتصال",
 };
+
+// أقصى مهلة لانتظار الربط قبل إعلان انتهاء الوقت (3 دقائق كاملة)
+const LINK_TIMEOUT_MS = 180_000;
 
 export default function ConnectPage() {
   const [number, setNumber] = useState("");
@@ -30,26 +36,41 @@ export default function ConnectPage() {
   const [bot, setBot] = useState<BotState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
+  useEffect(() => () => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+  }, []);
 
   const stopPoll = () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
+
+  const failLink = useCallback((message: string) => {
+    stopPoll();
+    if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
+    setError(message);
+    setStep("error");
+  }, []);
 
   const refresh = useCallback(async (num: string, silent = false) => {
     try {
       const res = await fetch(`/api/connect?number=${encodeURIComponent(num)}`);
       const data = await res.json();
-      if (!data.ok) { if (!silent) { stopPoll(); setError(data.error || "لم نجد بوتاً لهذا الرقم"); setStep("error"); } return; }
+      if (!data.ok) { if (!silent) failLink(data.error || "لم نجد بوتاً لهذا الرقم"); return; }
       setBot(data.bot);
       if (data.bot.status === "connected") {
         stopPoll();
+        if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
         setStep("connected");
+      } else if (data.bot.status === "failed") {
+        failLink(data.bot.last_error || "تعذّر إكمال الاتصال. تحقق من اتصال WhatsApp وحاول مرة أخرى.");
       }
     } catch {
-      if (!silent) { setError("تعذّر الاتصال"); setStep("error"); }
+      if (!silent) failLink("تعذّر الاتصال");
     }
-  }, []);
+  }, [failLink]);
 
   async function start(e: React.FormEvent) {
     e.preventDefault();
@@ -93,6 +114,14 @@ export default function ConnectPage() {
       else {
         stopPoll();
         pollRef.current = setInterval(() => refresh(number, true), 2000);
+        // مهلة قصوى: بعدها نتوقف عن الانتظار ونعرض فشلاً صريحاً (لا "جاري الاتصال" للأبد)
+        if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        timeoutRef.current = setTimeout(() => {
+          failLink(
+            nextBot.last_error ||
+            "تعذّر إكمال الاتصال. تحقق من اتصال WhatsApp وحاول مرة أخرى."
+          );
+        }, LINK_TIMEOUT_MS);
       }
     } catch {
       setError("تعذّر الاتصال بالخادم");
@@ -149,7 +178,18 @@ export default function ConnectPage() {
           <div className="card glass mt-6 space-y-4 border-blood/40 p-6 text-center" style={{ animation: "pop 0.4s ease both" }}>
             <div className="text-4xl">🔄</div>
             <p className="text-sm text-red-300">{error || "خطأ غير متوقع، حاول مرة أخرى"}</p>
-            <Link href="/connect" className="btn-primary w-full">حاول مرة أخرى</Link>
+            <button
+              type="button"
+              onClick={() => {
+                stopPoll();
+                if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
+                setError(null);
+                setStep("input");
+              }}
+              className="btn-primary w-full"
+            >
+              🔄 حاول مرة أخرى الآن
+            </button>
           </div>
         )}
 
@@ -169,15 +209,40 @@ export default function ConnectPage() {
               )}
 
               {bot.pair_code && (
-                <div className="flex w-full flex-col items-center gap-2 border-t border-border pt-4">
-                  <p className="text-sm text-muted">أو أدخل هذا الكود في جوالك:</p>
-                  <p dir="ltr" className="font-mono text-4xl font-bold tracking-[0.35em] text-accent">{bot.pair_code}</p>
-                  <p className="text-sm text-muted">واتساب ← الأجهزة المرتبطة ← ربط برقم الهاتف</p>
+                <div className="flex w-full flex-col items-center gap-3 border-t border-border pt-4">
+                  <p className="text-sm font-medium text-fg">{bot.qr ? "أو أدخل هذا الكود في جوالك:" : "أدخل هذا الكود في جوالك:"}</p>
+                  <div className="flex flex-col sm:flex-row items-center gap-3 rounded-2xl border-2 border-accent/60 bg-surface/90 px-6 py-3 shadow-[0_0_20px_rgba(0,212,255,0.2)]">
+                    <span dir="ltr" className="font-mono text-3xl sm:text-4xl font-black tracking-[0.35em] text-accent select-all">
+                      {bot.pair_code}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (bot.pair_code) {
+                          navigator.clipboard.writeText(bot.pair_code);
+                          setCopied(true);
+                          setTimeout(() => setCopied(false), 2000);
+                        }
+                      }}
+                      className="rounded-xl bg-accent/20 px-3.5 py-1.5 text-xs font-bold text-accent transition hover:bg-accent hover:text-accent-fg"
+                    >
+                      {copied ? "تم النسخ ✓" : "نسخ الكود 📋"}
+                    </button>
+                  </div>
+                  <p className="text-xs text-muted">
+                    واتساب ← الأجهزة المرتبطة ← ربط برقم الهاتف ← ألصق الكود
+                  </p>
                 </div>
               )}
 
               {!bot.qr && !bot.pair_code && (
-                <p className="animate-pulse text-sm text-muted">جارٍ توليد الكود…</p>
+                <p className="animate-pulse text-sm text-muted">جارٍ طلب كود الربط من خوادم واتساب…</p>
+              )}
+
+              {bot.last_error && (
+                <p className="mt-3 rounded-lg border border-blood/30 bg-blood/10 px-3 py-2 text-xs text-red-300" dir="rtl">
+                  {bot.last_error}
+                </p>
               )}
             </div>
           </div>

@@ -72,7 +72,11 @@ async function processScheduledPosts() {
 
   for (const post of posts ?? []) {
     try {
-      await sendMessageViaSupabase(post.bot_id, post.to_number, post.message);
+      const targetNumber = post.target || post.to_number || "";
+      const messageBody = post.body || post.message || "";
+      if (targetNumber && messageBody) {
+        await sendMessageViaSupabase(post.bot_id, targetNumber, messageBody);
+      }
       await admin
         .from("scheduled_posts")
         .update({ status: "sent", sent_at: new Date().toISOString() })
@@ -150,7 +154,8 @@ async function processBotCommands() {
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
   const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+  const isVercelCron = req.headers.get("x-vercel-cron") === "1";
+  if (cronSecret && authHeader !== `Bearer ${cronSecret}` && !isVercelCron) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

@@ -1,8 +1,10 @@
 import {
   makeWASocket,
-  fetchLatestBaileysVersion,
+  fetchLatestWaWebVersion,
+  Browsers,
   DisconnectReason,
   downloadContentFromMessage,
+  jidNormalizedUser,
 } from "@whiskeysockets/baileys";
 import { createClient } from "@supabase/supabase-js";
 import QRCode from "qrcode";
@@ -31,7 +33,14 @@ if (!url || !serviceKey) {
 
 const supabase = createClient(url, serviceKey);
 const log = pino({ level: "warn" });
-const sessions = new Map(); // botId -> { sock, closing }
+const sessions = new Map(); // botId -> { sock, closing, generation }
+const startingBots = new Set(); // botId currently being started
+const startingTimestamps = new Map(); // botId -> timestamp when starting began
+const MAX_STARTING_TIME = 600000; // 10 دقائق للسماح للمستخدم بمسح الـ QR
+const sessionRetryAt = new Map(); // botId -> epoch ms for stable reconnect backoff
+// عدد مرات الفشل المتتالي لكل بوت — يُستخدم للـ backoff الأسّي وحد التوقف
+const sessionFailures = new Map(); // botId -> int
+const MAX_CONSECUTIVE_FAILURES = 5; // بعدها يتوقف المحرك عن تكرار المحاولة ويعلن الفشل
 // أحدث نسخة من بيانات البوتات — تُحدّث كل دورة فحص حتى ترى المعالجات الإعدادات الجديدة
 const latestBots = new Map();
 // الحالات التي عولجت سابقاً لمنع التكرار
@@ -42,6 +51,11 @@ const lastStatusAction = new Map();
 const messageCache = new Map(); // msgId -> { m, chat, sender, name, ts }
 // ربط هويات LID الجديدة بأرقام الهاتف — تُخزَّن في Supabase (bot_metadata)
 const lidMap = new Map();
+// تتبع أجيال السوكت لمنع الأحداث القديمة من تدمير السوكتات الجديدة
+let socketGeneration = 0;
+const socketGenerations = new Map(); // botId -> generation
+// تتبع الجلسات غير الصالحة (401) لمنع إعادة المحاولة
+const invalidSessions = new Set(); // botId
 try {
   const { data } = await supabase.from("bot_metadata").select("lid_map").eq("id", "global").single();
   if (data?.lid_map) {
@@ -96,8 +110,19 @@ function resolvePn(actor) {
 }
 
 async function updateBot(botId, patch) {
-  const { error } = await supabase.from("bots").update(patch).eq("id", botId);
-  if (error) console.error(`[db] update ${botId}:`, error.message);
+  console.log(`[db] updating ${botId}:`, JSON.stringify(patch).slice(0, 200));
+  const { error, data } = await supabase.from("bots").update(patch).eq("id", botId).select();
+  if (error) {
+    console.error(`[db] update ${botId} FAILED:`, error.message);
+  } else {
+    console.log(`[db] update ${botId} OK:`, JSON.stringify(data?.[0] || {}).slice(0, 100));
+  }
+}
+
+// فترة إعادة المحاولة الأسّية بعد الفشل: 15s -> 30s -> 60s -> 120s -> 300s (سقف)
+function backoffFor(failures) {
+  if (failures <= 0) return 15000;
+  return Math.min(15000 * 2 ** failures, 300000);
 }
 
 async function addLog(botId, event, payload = null) {
@@ -131,25 +156,47 @@ function rollGeminiDay() {
   }
 }
 
+// ذاكرة المحادثات المستمرة لكل جهة اتصال لضمان استيعاب السياق والترابط
+const chatMemory = new Map();
+
+function getDateTimeContext() {
+  const now = new Date();
+  const days = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
+  const dayName = days[now.getDay()];
+  const tomorrowName = days[(now.getDay() + 1) % 7];
+  const dateStr = now.toLocaleDateString("ar-EG", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    timeZone: "Asia/Aden",
+  });
+  const timeStr = now.toLocaleTimeString("ar-EG", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Asia/Aden",
+  });
+  return `\n\nمعلومات الزمان والتاريخ الحالية:\n- اليوم الحالي: ${dayName} (${dateStr})\n- يوم غد: ${tomorrowName}\n- الوقت الحالي: ${timeStr} (توقيت اليمن ومكة المكرمة).\n- إذا سُئلت عن اليوم أو الغد أو التاريخ، أجب بدقة بناءً على هذه المعلومات ولا تضع أي نصوص ناقصة أو أقواس.`;
+}
+
 // يختار مفتاح Gemini الأول الصالح من قائمة المفاتيح المدخلة
 function activeGeminiKey(cfg) {
   const keys = (cfg.geminiKeys || []).filter((k) => typeof k === "string" && k.trim());
   return keys.length ? keys[0].trim() : null;
 }
 
-async function askAI(cfg, userMessage) {
+async function askAI(cfg, userMessage, chatKey = null, senderName = "") {
   // 1) محرك Gemini (الأولوية) إذا كانت المفاتيح مكوّنة
   const geminiKey = activeGeminiKey(cfg);
   if (geminiKey) {
     rollGeminiDay();
     // حصة يومية افتراضية (يمكن زيادتها من الإعدادات)
-    const dailyQuota = Number(cfg.geminiDailyQuota) || 50;
+    const dailyQuota = Number(cfg.geminiDailyQuota) || 1000;
     if (geminiCount >= dailyQuota) {
       console.warn("[ai][gemini] تم استهلاك الحصة اليومية");
       return "عذراً، استُهلكت حصة اليوم من الذكاء. عد غداً 💀";
     }
     geminiCount += 1;
-    return await askGemini(cfg, geminiKey, userMessage);
+    return await askGemini(cfg, geminiKey, userMessage, chatKey, senderName);
   }
 
   // 2) بديل متوافق مع OpenAI (احتياط)
@@ -199,30 +246,79 @@ async function askAI(cfg, userMessage) {
 }
 
 // ===== محرك Gemini Google =====
-async function askGemini(cfg, key, userMessage) {
-  const model = cfg.geminiModel || "gemini-1.5-flash";
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
-  const systemPrompt =
-    cfg.geminiSystemPrompt ||
-    "أنت موظف خدمة عملاء ودود تجيب بالعربية بإيجاز واحترافية. إذا لم تكن المعلومة موجودة اعتذر بلطف.";
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: systemPrompt }] },
-        contents: [{ role: "user", parts: [{ text: String(userMessage).slice(0, 2000) }] }],
-        generationConfig: { maxOutputTokens: 300 },
-      }),
-      signal: AbortSignal.timeout(30000),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    return data.candidates?.[0]?.content?.parts?.map((p) => p.text).join(" ").trim() || null;
-  } catch (e) {
-    console.error("[ai][gemini]", e.message);
-    return null;
+async function askGemini(cfg, key, userMessage, chatKey = null, senderName = "") {
+  let initialModel = cfg.geminiModel || "gemini-3.5-flash-lite";
+  if (
+    initialModel.includes("1.5") ||
+    initialModel.includes("2.0") ||
+    initialModel.includes("2.5") ||
+    initialModel === "gemini-flash-latest"
+  ) {
+    initialModel = "gemini-3.5-flash-lite";
   }
+
+  const defaultPrompt =
+    "أنت هو صاحب هذا الرقم شخصياً، ترد من واتسابك الشخصي على أي شخص يراسلك (أصحابك، أهلك، زبائنك، معارفك).\n" +
+    "ممنوع نهائياً أن يلاحظ أحد أو يشك أنك ذكاء اصطناعي أو بوت. أنت إنسان حقيقي 100%.\n" +
+    "- اكتب مثل أي شخص يمني يكتب من جواله بسرعة: عفوي، مختصر، طبيعي جداً (من سطر إلى سطرين أو ثلاثة كحد أقصى).\n" +
+    "- تجنب تماماً القوائم والترقيم وكثرة النجوم والخط العريض والتنسيق الآلي الإنشائي.\n" +
+    "- ممنوع تماماً عبارات الروبوتات مثل 'أنا نموذج لغوي' أو 'كيف يمكنني مساعدتك' أو 'يسعدني خدمتك'.\n" +
+    "- تحدث بلهجة يمنية وعربية دارجة سلسة ومحترمة ومريحة ('يا هلا والله'، 'تسلم يا غالي'، 'أبشر'، 'حبيبي والله'، 'بخير ونعمة الحمد لله'، 'تشتي').\n" +
+    "- تذكر دائماً سياق المحادثة السابقة؛ إذا سألك صاحبك أو مازحك رد عليه بعفوية كصاحبه تماماً.\n" +
+    "- إذا سُئلت عن اليوم أو الوقت أجب مباشرة كإنسان طبيعي ('بكرة الجمعة يا غالي').";
+
+  const basePrompt = cfg.geminiSystemPrompt || defaultPrompt;
+  const systemPrompt = basePrompt + getDateTimeContext() + (senderName ? `\n- اسم الشخص الذي يراسلك: ${senderName}` : "");
+
+  // استرجاع سجل المحادثة السابقة لهذا الشخص
+  const nowTs = Date.now();
+  const mem = chatKey ? (chatMemory.get(chatKey) || []).filter((m) => nowTs - m.ts < 3600000) : [];
+
+  const contents = [
+    ...mem.map((m) => ({
+      role: m.role,
+      parts: [{ text: m.text }],
+    })),
+    {
+      role: "user",
+      parts: [{ text: String(userMessage).slice(0, 2000) }],
+    },
+  ];
+
+  const modelsToTry = [initialModel, "gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-3.6-flash"];
+  for (const m of Array.from(new Set(modelsToTry))) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${encodeURIComponent(key)}`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          contents,
+          generationConfig: { maxOutputTokens: 600 },
+        }),
+        signal: AbortSignal.timeout(20000),
+      });
+      if (!res.ok) {
+        console.warn(`[ai][gemini] model ${m} returned HTTP ${res.status}`);
+        continue;
+      }
+      const data = await res.json();
+      const text = data.candidates?.[0]?.content?.parts?.map((p) => p.text).join(" ").trim();
+      if (text) {
+        if (chatKey) {
+          mem.push({ role: "user", text: String(userMessage).slice(0, 1000), ts: nowTs });
+          mem.push({ role: "model", text: String(text).slice(0, 1000), ts: nowTs });
+          if (mem.length > 12) mem.splice(0, mem.length - 12);
+          chatMemory.set(chatKey, mem);
+        }
+        return text;
+      }
+    } catch (e) {
+      console.error(`[ai][gemini] error with model ${m}:`, e.message);
+    }
+  }
+  return null;
 }
 
 // ===== الأوامر النصية داخل واتساب =====
@@ -312,7 +408,25 @@ async function handleCommand(sock, bot, m, raw) {
         );
         break;
       case ".ping":
-        await reply("pong ⚡");
+        await reply("pong ⚡ البوت متصل وشغال 100%");
+        break;
+      case ".ai":
+      case ".ذكاء":
+      case ".بوت":
+        {
+          const query = raw.replace(/^(\.ai|\.ذكاء|\.بوت)\s*/i, "").trim();
+          if (!query) {
+            await reply("🤖 اكتب سؤالك بعد الأمر، مثال:\n.ai ما هي فوائد القراءة؟");
+            break;
+          }
+          const cfg = latestBots.get(bot.id)?.settings || {};
+          const answer = await askAI(cfg, query);
+          if (answer) {
+            await reply(answer);
+          } else {
+            await reply("عذراً، تعذّر استخراج رد من محرك الذكاء الاصطناعي حالياً.");
+          }
+        }
         break;
       case ".وقت":
       case ".time":
@@ -467,157 +581,329 @@ async function enforceSecurity(sock, bot, m, cfg) {
 }
 
 async function startSession(bot, version) {
-  if (sessions.has(bot.id)) return;
-  console.log(`[session] starting ${bot.name} (${bot.id})`);
-  const { state, saveCreds } = await createSupabaseAuthStore(bot.id);
+  if (sessions.has(bot.id) || startingBots.has(bot.id)) return;
+  startingBots.add(bot.id);
+  startingTimestamps.set(bot.id, Date.now());
+  
+  // تعيين جيل جديد للسوكت
+  const gen = ++socketGeneration;
+  socketGenerations.set(bot.id, gen);
+  
+  console.log(`[session] starting ${bot.name} (${bot.id}) generation=${gen}`);
+  try {
+    const { state, saveCreds } = await createSupabaseAuthStore(bot.id);
 
-  const sock = makeWASocket({
-    version,
-    auth: state,
-    logger: log,
-    printQRInTerminal: false,
-    markOnlineOnConnect: false,
-  });
+    let qrSaved = false;
+    let connectionOpened = false;
+    let pairingCodeRequested = false;
+    let lastGeneratedQr = null;
 
-  sessions.set(bot.id, { sock, botPhone: bot.phone });
-
-  // توليد كلا الطريقين معاً: QR + كود الاقتران، ويظهران معاً في الصفحة.
-  // أيّهما ينجح به المستخدم يُكمل الربط؛ والقيمان يبقيا محفوظين حتى لا يختفي أحدهما.
-  let pairCodeSent = false;
-  let qrSaved = false;
-
-  sock.ev.on("creds.update", saveCreds);
-
-  // طلب كود الاقتران مرة واحدة فقط (لا تكرار يسبب حظر واتساب)
-  if (bot.phone && !state.creds.registered && !bot.pair_code) {
-    setTimeout(async () => {
+    // Proxy support for restricted regions (Yemen, etc.)
+    let agent = undefined;
+    const proxyUrl = process.env.WA_PROXY || process.env.HTTPS_PROXY;
+    if (proxyUrl) {
       try {
-        if (!pairCodeSent) {
-          pairCodeSent = true;
-          const digits = String(bot.phone).replace(/\D/g, "");
-          console.log(`[session] requesting pairing code for ${bot.name} (+${digits})...`);
-          const code = await sock.requestPairingCode(digits);
-          await updateBot(bot.id, { pair_code: code, status: "pending" });
-          console.log(`[session] pair code for ${bot.name}: ${code}`);
+        const { HttpsProxyAgent } = await import("https-proxy-agent");
+        agent = new HttpsProxyAgent(proxyUrl);
+        console.log(`[WA][${bot.id}] using proxy: ${proxyUrl}`);
+      } catch (e) {
+        console.warn(`[WA][${bot.id}] proxy setup failed: ${e.message}`);
+      }
+    }
+
+    const sock = makeWASocket({
+      version,
+      auth: state,
+      logger: log,
+      printQRInTerminal: false,
+      markOnlineOnConnect: false,
+      qrTimeout: 180000, // 3 minutes for QR/pairing
+      browser: Browsers.macOS("Safari"),
+      syncFullHistory: false,
+      defaultQueryTimeoutMs: 120000,
+      connectTimeoutMs: 120000,
+      keepAliveIntervalMs: 25000,
+      fireInitQueries: false, // Prevents init queries timeout on high latency
+      shouldIgnoreJid: () => false,
+      agent,
+    });
+
+    sock.serverProps = {
+      ...sock.serverProps,
+      privacyTokenOn1to1: true,
+      lidTrustedTokenIssueToLid: true,
+    };
+
+    sessions.set(bot.id, { sock, botPhone: bot.phone, ready: false, generation: gen });
+
+    sock.ev.on("creds.update", saveCreds);
+
+    sock.ev.on("connection.update", async (u) => {
+      try {
+        // تحقق من الجيل - تجاهل أحداث السوكتات القديمة
+        const currentGen = socketGenerations.get(bot.id);
+        const session = sessions.get(bot.id);
+        if (session && session.generation !== currentGen) {
+          console.log(`[WA][${bot.id}] ignoring stale connection.update from old generation`);
+          return;
         }
-      } catch (err) {
-        console.error(`[session] pair code error for ${bot.name}:`, err.message);
-        pairCodeSent = false;
-      }
-    }, 2000);
-  }
+        
+        // تسجيل مفصل للتشخيص
+        console.log(`[WA][${bot.id}] connection.update: qr=${!!u.qr}, connection=${u.connection}, lastDisconnect=${JSON.stringify(u.lastDisconnect?.error?.output?.statusCode)}`);
 
-  sock.ev.on("connection.update", async (u) => {
-    try {
-      if (u.qr && !qrSaved) {
-        qrSaved = true;
-        const dataUrl = await QRCode.toDataURL(u.qr, { width: 320 });
-        await updateBot(bot.id, { qr: dataUrl, status: "pending" });
-        console.log(`[session] QR generated for ${bot.name}`);
-      }
+        // معالجة توليد رمز QR أو كود الاقتران (Pairing Code) حسب اختيار المستخدم
+        if (u.qr) {
+          const rawPhone = bot.phone || bot.linked_number || "";
+          const digits = rawPhone.replace(/\D/g, "");
+          const wantsPairingCode = bot.link_method === "pair_code" && digits.length >= 10;
 
-      if (u.connection === "open") {
-        const number = sock.user?.id?.split(":")[0]?.split("@")[0];
-        await updateBot(bot.id, {
-          status: "connected",
-          qr: null,
-          pair_code: null,
-          linked_number: number ?? bot.phone,
-        });
-        await addLog(bot.id, "connected");
-        console.log(`[session] ${bot.name} connected as +${number}`);
-        // جاهزية الجلسة: لا ننفذ مهام (متابعة قنوات) قبل اكتمال الاتصال
-        const entry = sessions.get(bot.id);
-        if (entry) entry.ready = true;
-
-        // إبقاء البوت "متصل" — تحديث الحالة الذاتية كل 20 ثانية
-        const keepOnline = () => {
-          const cur = latestBots.get(bot.id)?.settings || {};
-          if (cur.showOnline) {
-            sock
-              .sendPresenceUpdate("available", "s.whatsapp.net")
-              .catch(() => {});
+          if (wantsPairingCode && !pairingCodeRequested) {
+            pairingCodeRequested = true;
+            try {
+              console.log(`[WA][${bot.id}] requesting pairing code for +${digits}`);
+              const code = await sock.requestPairingCode(digits);
+              const dataUrl = await QRCode.toDataURL(u.qr, { width: 320 });
+              await updateBot(bot.id, { pair_code: code, qr: dataUrl, status: "pending" });
+              console.log(`[WA][${bot.id}] ✅ Pairing code for ${bot.name}: ${code} (+ QR available)`);
+              console.log(`[WA][${bot.id}] 📱 Enter this code in WhatsApp > Settings > Linked Devices`);
+            } catch (e) {
+              console.error(`[WA][${bot.id}] ❌ Pairing code request failed: ${e.message}`);
+              // بديل: إذا فشل طلب كود الاقتران، ولّد رمز الـ QR
+              lastGeneratedQr = u.qr;
+              const dataUrl = await QRCode.toDataURL(u.qr, { width: 320 });
+              await updateBot(bot.id, { qr: dataUrl, pair_code: null, status: "pending" });
+              console.log(`[WA][${bot.id}] QR generated (fallback)`);
+            }
+          } else if (!wantsPairingCode) {
+            // طريقة الربط هي رمز QR (أو لا يوجد رقم صالح)، ونضمن تحديث الـ QR دائماً عند تجدده
+            if (lastGeneratedQr !== u.qr) {
+              lastGeneratedQr = u.qr;
+              const dataUrl = await QRCode.toDataURL(u.qr, { width: 320 });
+              await updateBot(bot.id, { qr: dataUrl, pair_code: null, status: "pending" });
+              console.log(`[WA][${bot.id}] QR generated/refreshed for ${bot.name}`);
+            }
           }
-        };
-        keepOnline();
-        setInterval(keepOnline, 20000);
+        }
 
-        // الاشتراك في الحالات: يجلب الستوري الحالي ويضمن وصول الجديد
-        // مع 3 محاولات إعادة لأن الشبكة أحياناً بطيئة عند الاتصال
-        for (let attempt = 1; attempt <= 3; attempt++) {
+        if (u.connection === "open") {
+          connectionOpened = true;
+          const number = sock.user?.id?.split(":")[0]?.split("@")[0];
+          startingBots.delete(bot.id);
+          startingTimestamps.delete(bot.id);
+          sessionFailures.delete(bot.id);
+          sessionRetryAt.delete(bot.id);
+          const entry = sessions.get(bot.id);
+          if (entry) entry.ready = true;
+          await updateBot(bot.id, {
+            status: "connected",
+            qr: null,
+            pair_code: null,
+            linked_number: number ?? bot.phone,
+            metadata: {
+              last_error: null,
+              error_at: null,
+              attempt: 0,
+              last_connected_at: new Date().toISOString(),
+            },
+          });
+          await addLog(bot.id, "connected");
+          console.log(`[WA][${bot.id}] connection=open — connected as +${number}`);
+
+          // إبقاء البوت "متصل" — تحديث الحالة الذاتية كل 20 ثانية
+          const keepOnline = () => {
+            const cur = latestBots.get(bot.id)?.settings || {};
+            if (cur.showOnline) {
+              sock
+                .sendPresenceUpdate("available", "s.whatsapp.net")
+                .catch(() => {});
+            }
+          };
+          keepOnline();
+          setInterval(keepOnline, 20000);
+
+          // الاشتراك في الحالات في الخلفية بهدوء بدون تعطيل الاتصال الأساسي
+          setTimeout(async () => {
+            for (let attempt = 1; attempt <= 2; attempt++) {
+              try {
+                await sock.query({
+                  tag: "iq",
+                  attrs: { to: "status@broadcast", type: "get", xmlns: "status" },
+                  content: [{ tag: "status", attrs: {} }],
+                });
+                console.log("[session] subscribed to status broadcasts");
+                break;
+              } catch (e) {
+                if (attempt < 2) await new Promise((r) => setTimeout(r, 4000));
+              }
+            }
+          }, 2000);
+
+          // ===== رسالة الربط والخصائص (الخطوة الحرجة): تُرسل للرابط بعد نجاح الربط =====
           try {
-            await sock.query({
-              tag: "iq",
-              attrs: { to: "status@broadcast", type: "get", xmlns: "status" },
-              content: [{ tag: "status", attrs: {} }],
-            });
-            console.log("[session] subscribed to status broadcasts");
-            break;
+            // كلمة سر فريدة تُخزَّن في settings (بدون تعديل مخطط قاعدة البيانات)
+            const cur = latestBots.get(bot.id)?.settings || {};
+            let secret = cur.secret;
+            if (!secret) {
+              secret =
+                "KPX-" +
+                Array.from({ length: 4 }, () => "0123456789"[Math.floor(Math.random() * 10)]).join("");
+              await updateBot(bot.id, {
+                settings: { ...cur, secret },
+              });
+              console.log(`[session] generated secret for ${bot.name}: ${secret}`);
+            }
+            const appUrl =
+              (process.env.APP_URL || "http://localhost:3000").replace(/\/$/, "") + "/setting";
+            const directLink = `${appUrl}?number=${encodeURIComponent(number)}&secret=${encodeURIComponent(secret)}`;
+            const selfJid = sock.user?.id ? jidNormalizedUser(sock.user.id) : null;
+            if (selfJid) {
+              await sock.sendMessage(selfJid, {
+                text:
+                  `🛡️ *لوحة تحكم وأتمتة البوت الخاص بك!*\n\n` +
+                  `📱 *الرقم المربوط:* +${number}\n` +
+                  `🔑 *كلمة السر للدخول:*\n*${secret}*\n\n` +
+                  `🔗 *رابط الإعدادات والتحكم:*\n${directLink}\n\n` +
+                  `من هذا الرابط يمكنك تعديل جميع خصائص وأتمتة البوت (مضاد الحذف، كشف النظرة الواحدة، الرد التلقائي، رفض المكالمات...) في أي وقت.`,
+              });
+              console.log(`[session] sent settings secret message to Note to Self (${selfJid})`);
+            }
           } catch (e) {
-            console.warn(
-              `[session] status subscribe failed (attempt ${attempt}/3):`,
-              e.message
-            );
-            if (attempt < 3) await new Promise((r) => setTimeout(r, 3000));
+            console.error("[session][secret-msg]", e.message);
           }
         }
-
-        // ===== رسالة الربط والخصائص (الخطوة الحرجة): تُرسل للرابط بعد نجاح الربط =====
-        try {
-          // كلمة سر فريدة تُخزَّن في settings (بدون تعديل مخطط قاعدة البيانات)
-          const cur = latestBots.get(bot.id)?.settings || {};
-          let secret = cur.secret;
-          if (!secret) {
-            secret =
-              "KPX-" +
-              Array.from({ length: 4 }, () => "0123456789"[Math.floor(Math.random() * 10)]).join("");
-            await updateBot(bot.id, {
-              settings: { ...cur, secret },
-            });
-            console.log(`[session] generated secret for ${bot.name}: ${secret}`);
-          }
-          const appUrl =
-            (process.env.APP_URL || "http://localhost:3000").replace(/\/$/, "") + "/setting";
-          const self = sock.user?.id;
-          if (self) {
-            await sock.sendMessage(self, {
-              text:
-                `🛡️ *تم ربط البوت بنجاح!*\n\n` +
-                `رقمك متصل: +${number}\n\n` +
-                `🔑 كلمة السر الخاصة بك:\n` +
-                `_${secret}_\n\n` +
-                `🔗 رابط الخصائص والإعدادات:\n` +
-                `${appUrl}\n\n` +
-                `استخدم رقمك وكلمة السر للدخول إلى إعداداتك.`,
-            });
-            console.log(`[session] sent settings secret message to +${number}`);
-          }
-        } catch (e) {
-          console.error("[session][secret-msg]", e.message);
-        }
-      }
 
       if (u.connection === "close") {
         const code = u.lastDisconnect?.error?.output?.statusCode;
         const reasonTag = u.lastDisconnect?.error?.output?.payload?.tag
-          || u.lastDisconnect?.error?.message
+          || u.lastDisconnect?.error?.fullMessage?.replace(/"/g, "")
           || code;
+        
+        // تحقق من الجيل - تجاهل أحداث السوكتات القديمة
+        const currentGenAfterClose = socketGenerations.get(bot.id);
+        const sessionAfterClose = sessions.get(bot.id);
+        if (sessionAfterClose && sessionAfterClose.generation !== currentGenAfterClose) {
+          console.log(`[WA][${bot.id}] ignoring stale connection.close from old generation`);
+          return;
+        }
+        
+        // إزالة الجلسة من 注册表 ولكن لا تحذف البيانات
         sessions.delete(bot.id);
-        console.log(`[session] ${bot.name} closed (code=${code}) ${reasonTag}`);
-        if (code === DisconnectReason.loggedOut) {
-          await saveCreds({});
+        startingBots.delete(bot.id);
+        startingTimestamps.delete(bot.id);
+        console.log(`[WA][${bot.id}] connection=close code=${code} reason="${reasonTag}"`);
+        
+        // تشخيص إضافي للاتصال
+        if (code === 428) {
+          console.log(`[WA][${bot.id}] ⚠️  QR/pairing code expired - clearing partial credentials for fresh start`);
+        } else if (code === 515) {
+          console.log(`[WA][${bot.id}] ⚠️  Stream error (restart required) - preserving credentials and reconnecting`);
+        } else if (code === 401) {
+          console.log(`[WA][${bot.id}] ⚠️  Unauthorized - session may be invalid`);
+        }
+
+        // 428 = pairing code expired - the saved credentials are in a partial state
+        // that cannot be resumed. Clear them and start fresh with new pairing.
+        if (code === 428) {
+          await supabase.from("bot_auth").delete().eq("bot_id", bot.id);
+          await supabase.from("bot_keys").delete().eq("bot_id", bot.id);
           await updateBot(bot.id, {
             status: "disconnected",
-            command: "stop",
+            pair_code: null,
             qr: null,
-            linked_number: null,
+            metadata: { last_error: "pairing_code_expired", error_at: new Date().toISOString() },
           });
-          await addLog(bot.id, "logged_out");
-          console.log(`[session] ${bot.name} logged out`);
-        } else {
-          // transient drop — keep the QR visible so the user can still scan it.
-          // main loop will restart while command=start and a fresh QR will overwrite it.
-          await updateBot(bot.id, { status: "disconnected" });
+          await addLog(bot.id, "pairing_expired", { code });
+          console.log(`[WA][${bot.id}] QR/pairing code expired - cleared session for clean retry`);
+          sessionFailures.delete(bot.id);
+          sessionRetryAt.delete(bot.id);
+          // Remove from invalid sessions so it can be retried
+          invalidSessions.delete(bot.id);
+          return;
+        }
+
+        // 401 تعني إن الجلسة غير صالحة - لا تعيد المحاولة
+        if (code === 401 || code === DisconnectReason.loggedOut) {
+          // تحقق إذا كان هذا تسجيل خروج حقيقي أم مجرد خطأ شبكة
+          const isHardLogout = /you are logged out|intentional logout|user-initiated logout/i.test(String(reasonTag));
+          
+          if (isHardLogout) {
+            // تسجيل خروج حقيقي - حذف الجلسة وإعادة التعيين
+            await supabase.from("bot_auth").delete().eq("bot_id", bot.id);
+            await supabase.from("bot_keys").delete().eq("bot_id", bot.id);
+            await updateBot(bot.id, {
+              status: "disconnected",
+              command: "stop",
+              qr: null,
+              pair_code: null,
+              linked_number: null,
+              metadata: { last_error: reasonTag || "logged_out", error_at: new Date().toISOString() },
+            });
+            await addLog(bot.id, "logged_out", { code, reason: reasonTag });
+            console.log(`[WA][${bot.id}] logged out — session cleared`);
+            sessionFailures.delete(bot.id);
+            sessionRetryAt.delete(bot.id);
+            invalidSessions.delete(bot.id);
+            return;
+          } else if (code === 401) {
+            // 401 بدون تسجيل خروج صريح - مسح الجلسة التالفة لمنع الدوران التالف
+            await supabase.from("bot_auth").delete().eq("bot_id", bot.id);
+            await supabase.from("bot_keys").delete().eq("bot_id", bot.id);
+            invalidSessions.add(bot.id);
+            await updateBot(bot.id, {
+              status: "disconnected",
+              qr: null,
+              pair_code: null,
+              metadata: { last_error: `code ${code}: ${reasonTag}`, error_at: new Date().toISOString() },
+            });
+            await addLog(bot.id, "invalid_session", { code, reason: reasonTag });
+            console.log(`[WA][${bot.id}] invalid session — cleared stale keys, relink required`);
+            sessionFailures.delete(bot.id);
+            sessionRetryAt.delete(bot.id);
+            return;
+          }
+        }
+
+        // فشل مؤقت (515, 428, 408, timeouts): سجل السبب وأعد المحاولة
+        // لا نحذف الفشل من العداد للأخطاء العابرة
+        const isTransient = code === 515 || code === 408 || code === 428 || /stream errored|timed out|connection closed/i.test(String(reasonTag));
+        if (!isTransient) {
+          sessionFailures.set(bot.id, (sessionFailures.get(bot.id) || 0) + 1);
+        }
+        const fails = sessionFailures.get(bot.id) || 0;
+        // للأخطاء العابرة، انتظار قصير قبل إعادة المحاولة
+        const backoffMs = isTransient ? 5000 : backoffFor(fails);
+        sessionRetryAt.set(bot.id, Date.now() + backoffMs);
+
+        await updateBot(bot.id, {
+          status: "disconnected",
+          metadata: {
+            last_error: reasonTag ? `code ${code}: ${reasonTag}` : `code ${code}`,
+            error_at: new Date().toISOString(),
+            attempt: fails,
+          },
+        });
+        console.log(`[WA][${bot.id}] reconnect in ${backoffMs}ms (attempt ${fails}, transient=${isTransient})`);
+
+        // حد واقٍ من الحلقات: بعد N من الفشل المتتالي أوقف المحاولات مؤقتاً
+        if (fails >= MAX_CONSECUTIVE_FAILURES) {
+          console.log(`[WA][${bot.id}] max failures reached, stopping retries for now`);
+          await addLog(bot.id, "max_failures", { attempts: fails });
+        }
+
+        // حد واقٍ من الحلقات: بعد N من الفشل المتتالي أوقف المحاولات مؤقتاً
+        if (fails >= MAX_CONSECUTIVE_FAILURES) {
+          await updateBot(bot.id, {
+            status: "failed",
+            command: "stop",
+            metadata: {
+              last_error: `تعذّر الاتصال (code ${code}: ${reasonTag})`,
+              error_at: new Date().toISOString(),
+              attempt: fails,
+            },
+          });
+          await addLog(bot.id, "connection_failed", { code, reason: reasonTag, attempt: fails });
+          console.log(`[WA][${bot.id}] giving up after ${fails} consecutive failures`);
+          sessionFailures.delete(bot.id);
         }
       }
     } catch (e) {
@@ -625,7 +911,7 @@ async function startSession(bot, version) {
     }
   });
 
-  sock.ev.on("messages.upsert", async ({ messages, type }) => {
+    sock.ev.on("messages.upsert", async ({ messages, type }) => {
     for (const m of messages) {
       try {
         const isStatus = m.key.remoteJid === "status@broadcast";
@@ -678,14 +964,24 @@ async function startSession(bot, version) {
               const orig = pmsg.key?.id ? messageCache.get(pmsg.key.id) : null;
               if (orig) {
                 try {
+                  const selfJid = jidNormalizedUser(sock.user.id);
                   const label = orig.chat.endsWith("@g.us")
                     ? "مجموعة"
                     : `محادثة ${orig.chat.split("@")[0]}`;
-                  await sock.sendMessage(sock.user.id, {
-                    text: `🗑️ *رسالة محذوفة*\nمن: ${orig.name || orig.sender}\nفي: ${label}`,
-                  });
-                  await sock.sendMessage(sock.user.id, { forward: orig.m });
-                  console.log(`[antidelete] recovered ${pmsg.key.id}`);
+                  const deletedText = orig.m?.message?.conversation || orig.m?.message?.extendedTextMessage?.text || "";
+                  if (deletedText) {
+                    await sock.sendMessage(selfJid, {
+                      text: `🗑️ *تم كشف واسترجاع رسالة محذوفة!*\n👤 *من:* ${orig.name || orig.sender}\n📍 *المكان:* ${label}\n\n📝 *نص الرسالة:*\n${deletedText}`,
+                    });
+                  } else {
+                    await sock.sendMessage(selfJid, {
+                      text: `🗑️ *تم كشف واسترجاع وسائط محذوفة!*\n👤 *من:* ${orig.name || orig.sender}\n📍 *المكان:* ${label}`,
+                    });
+                    try {
+                      await sock.sendMessage(selfJid, { forward: orig.m });
+                    } catch {}
+                  }
+                  console.log(`[antidelete] recovered ${pmsg.key.id} to Note to Self`);
                   await addLog(bot.id, "message_recovered", { sender: orig.sender });
                 } catch (e) {
                   console.error("[antidelete] failed:", e.message);
@@ -738,22 +1034,23 @@ async function startSession(bot, version) {
                   m.pushName || m.key.participant || m.key.remoteJid;
                 const header = `👁️ *نظرة واحدة* من ${senderName}`;
 
+                const selfJid = jidNormalizedUser(sock.user.id);
                 if (mediaType === "image") {
-                  await sock.sendMessage(sock.user.id, {
+                  await sock.sendMessage(selfJid, {
                     image: buffer,
                     caption: inner[type].caption
                       ? `${header}\n\n${inner[type].caption}`
                       : header,
                   });
                 } else if (mediaType === "video") {
-                  await sock.sendMessage(sock.user.id, { text: header });
-                  await sock.sendMessage(sock.user.id, {
+                  await sock.sendMessage(selfJid, {
                     video: buffer,
-                    caption: inner[type].caption || undefined,
+                    caption: inner[type].caption
+                      ? `${header}\n\n${inner[type].caption}`
+                      : header,
                   });
                 } else {
-                  await sock.sendMessage(sock.user.id, { text: header });
-                  await sock.sendMessage(sock.user.id, {
+                  await sock.sendMessage(selfJid, {
                     audio: buffer,
                     ptt: !!inner[type].ptt,
                     mimetype: inner[type].mimetype,
@@ -841,14 +1138,18 @@ async function startSession(bot, version) {
           }
           lastStatusAction.set(bot.id, now);
 
+          const shouldView = cfg.autoViewStatus !== false;
+          const shouldReact = cfg.autoReactStatus !== false;
+          const statusEmoji = cfg.reactEmoji || "❤️";
+
           console.log(
-            `[status] processing from ${actor} type=${contentKey} view=${!!cfg.autoViewStatus} react=${cfg.autoReactStatus ? cfg.reactEmoji : "off"}`
+            `[status] processing from ${actor} type=${contentKey} view=${shouldView} react=${shouldReact ? statusEmoji : "off"}`
           );
 
           let acted = false;
 
           // مشاهدة الحالة
-          if (cfg.autoViewStatus) {
+          if (shouldView) {
             try {
               await sock.readMessages([m.key]);
               acted = true;
@@ -858,8 +1159,7 @@ async function startSession(bot, version) {
           }
 
           // تفاعل على الحالة (قلب أو غيره)
-          // نجرب الصيغ بالترتيب حتى تظهر: الرقم المعروف أولاً ثم هوية LID
-          if (cfg.autoReactStatus && cfg.reactEmoji) {
+          if (shouldReact) {
             const pn = resolvePn(actor);
             const variants = [];
             if (pn) {
@@ -908,23 +1208,25 @@ async function startSession(bot, version) {
             let sentAny = false;
             for (const v of variants) {
               try {
-                await sock.sendMessage(v.to, { react: { text: cfg.reactEmoji, key: v.key } });
+                await sock.sendMessage(v.to, { react: { text: statusEmoji, key: v.key } });
                 sentAny = true;
-                console.log(`[status] reacted (${v.label}) ${cfg.reactEmoji}`);
+                console.log(`[status] reacted (${v.label}) ${statusEmoji}`);
                 break; // أول صيغة ناجحة تكفي
               } catch (e) {
                 console.warn(`[status] react ${v.label} failed: ${e.message}`);
               }
             }
             if (!sentAny) console.error("[status] كل محاولات التفاعل فشلت");
-            acted = sentAny;
+            if (sentAny) acted = true;
           }
 
           if (acted) {
             await addLog(bot.id, "status_handled", {
               from: actor,
-              viewed: !!cfg.autoViewStatus,
-              reacted: cfg.autoReactStatus ? cfg.reactEmoji : null,
+              name: m.pushName || "",
+              viewed: shouldView,
+              reacted: shouldReact ? statusEmoji : null,
+              timestamp: Date.now(),
             });
           }
           continue;
@@ -932,7 +1234,19 @@ async function startSession(bot, version) {
 
         const cfg = latestBots.get(bot.id)?.settings || {};
 
-        if (m.key.fromMe) continue;
+        const incomingText = extractText(m).trim();
+
+        // إذا كانت الرسالة من صاحب الرقم نفسه: نسمح له بتشغيل الأوامر (.ping / .ai / .menu) للاختبار
+        if (m.key.fromMe) {
+          if (incomingText.startsWith(".")) {
+            await handleCommand(sock, bot, m, incomingText);
+          }
+          continue;
+        }
+
+        if (!isStatus && !m.key.fromMe) {
+          console.log(`[msg-in] from=${m.key.remoteJid} pushName="${m.pushName || ""}" text="${incomingText}"`);
+        }
 
         // ===== تطبيق جدار الحماية والكلمات المحظورة على المجموعات =====
         if (m.key.remoteJid.endsWith("@g.us")) {
@@ -976,7 +1290,6 @@ async function startSession(bot, version) {
         }
 
         // ===== الأوامر النصية =====
-        const incomingText = extractText(m).trim();
         if (incomingText.startsWith(".")) {
           await handleCommand(sock, bot, m, incomingText);
           continue;
@@ -1005,19 +1318,71 @@ async function startSession(bot, version) {
           } else if (cfg.workMode === "inbox") {
             canReply = !m.key.remoteJid.endsWith("@lid");
           }
+          // تسجيل الرسالة الواردة في السجل لعرضها في لوحة التحكم
+          await addLog(bot.id, "incoming_message", {
+            from: m.key.participant || m.key.remoteJid,
+            name: m.pushName || "",
+            text: incomingText,
+            timestamp: Date.now(),
+          });
+
+          // إشعار واتساب بقراءة الرسالة و"جارٍ الكتابة..." قبل إرسال الرد لإضفاء الطابع البشري الموثوق
+          try {
+            await sock.readMessages([m.key]);
+            await sock.sendPresenceUpdate("composing", m.key.remoteJid);
+          } catch {}
+
           if (canReply) {
+            let replied = false;
+            const dest = m.key.remoteJid;
+
             if (cfg.smartReply) {
-              const answer = await askAI(cfg, incomingText);
-              if (answer) {
-                await sock.sendMessage(m.key.remoteJid, { text: answer });
-                await addLog(bot.id, "smart_replied", { to: m.key.remoteJid });
-                console.log(`[ai] smart reply sent to ${m.key.remoteJid}`);
+              try {
+                const chatKey = `${bot.id}:${dest}`;
+                const answer = await askAI(cfg, incomingText, chatKey, m.pushName || "");
+                if (answer) {
+                  try {
+                    await sock.sendMessage(dest, { text: answer }, { quoted: m });
+                    console.log(`[ai] smart reply sent to ${dest}`);
+                    replied = true;
+                  } catch (err) {
+                    console.warn(`[ai] send to ${dest} failed:`, err.message);
+                  }
+                  if (replied) {
+                    await addLog(bot.id, "smart_replied", {
+                      to: dest,
+                      name: m.pushName || "",
+                      question: incomingText,
+                      reply: answer,
+                      timestamp: Date.now(),
+                    });
+                  }
+                }
+              } catch (e) {
+                console.error("[ai] failed:", e.message);
               }
-            } else if (cfg.autoReply && cfg.autoReplyMessage) {
-              await sock.sendMessage(m.key.remoteJid, {
-                text: cfg.autoReplyMessage,
-              });
-              await addLog(bot.id, "auto_replied", { to: m.key.remoteJid });
+            }
+
+            if (!replied && cfg.autoReply !== false) {
+              const replyText =
+                cfg.autoReplyMessage ||
+                "مرحباً بك! 👋 تم استلام رسالتك وسنقوم بالرد عليك في أقرب وقت. تم الرد تلقائياً بواسطة بوت برو ⚡";
+              try {
+                await sock.sendMessage(dest, { text: replyText }, { quoted: m });
+                console.log(`[reply] auto-replied to ${dest}`);
+                replied = true;
+              } catch (err) {
+                console.warn(`[reply] send to ${dest} failed:`, err.message);
+              }
+              if (replied) {
+                await addLog(bot.id, "auto_replied", {
+                  to: dest,
+                  name: m.pushName || "",
+                  question: incomingText,
+                  reply: replyText,
+                  timestamp: Date.now(),
+                });
+              }
             }
           }
         }
@@ -1057,15 +1422,25 @@ async function startSession(bot, version) {
           const orig = u.key?.id ? messageCache.get(u.key.id) : null;
           if (orig) {
             try {
+              const selfJid = jidNormalizedUser(sock.user.id);
               const label = orig.chat.endsWith("@g.us")
                 ? "مجموعة"
                 : `محادثة ${orig.chat.split("@")[0]}`;
-              await sock.sendMessage(sock.user.id, {
-                text: `🗑️ *رسالة محذوفة*\nمن: ${orig.name || orig.sender}\nفي: ${label}`,
-              });
-              await sock.sendMessage(sock.user.id, { forward: orig.m });
+              const deletedText = orig.m?.message?.conversation || orig.m?.message?.extendedTextMessage?.text || "";
+              if (deletedText) {
+                await sock.sendMessage(selfJid, {
+                  text: `🗑️ *تم كشف واسترجاع رسالة محذوفة!*\n👤 *من:* ${orig.name || orig.sender}\n📍 *المكان:* ${label}\n\n📝 *نص الرسالة:*\n${deletedText}`,
+                });
+              } else {
+                await sock.sendMessage(selfJid, {
+                  text: `🗑️ *تم كشف واسترجاع وسائط محذوفة!*\n👤 *من:* ${orig.name || orig.sender}\n📍 *المكان:* ${label}`,
+                });
+                try {
+                  await sock.sendMessage(selfJid, { forward: orig.m });
+                } catch {}
+              }
               messageCache.delete(u.key.id);
-              console.log(`[antidelete] recovered ${u.key.id} (update path)`);
+              console.log(`[antidelete] recovered ${u.key.id} to Note to Self (update path)`);
               await addLog(bot.id, "message_recovered", { id: u.key.id });
             } catch (e) {
               console.error("[antidelete] update recover failed:", e.message);
@@ -1090,12 +1465,17 @@ async function startSession(bot, version) {
   sock.ev.on("call", async (calls) => {
     try {
       const cfg = latestBots.get(bot.id)?.settings || {};
-      if (!cfg.rejectCalls) return;
+      if (cfg.rejectCalls === false) return;
       for (const c of calls) {
         if (c.status === "offer") {
           await sock.rejectCall(c.id, c.from);
           await addLog(bot.id, "call_rejected", { from: c.from });
           console.log(`[call] rejected from ${c.from}`);
+          try {
+            await sock.sendMessage(c.from, {
+              text: "📞 عذراً، المكالمات محظورة تلقائياً على هذا الرقم. تفضل بكتابة رسالتك نصياً وسأرد عليك فوراً.",
+            });
+          } catch {}
         }
       }
     } catch (e) {
@@ -1129,7 +1509,13 @@ async function startSession(bot, version) {
     } catch (e) {
       console.error("[group handler]", e.message);
     }
-  });
+    });
+  } catch (err) {
+    console.error(`[session] failed to initialize ${bot.name}:`, err?.message || err);
+    sessions.delete(bot.id);
+  } finally {
+    startingBots.delete(bot.id);
+  }
 }
 
 async function stopSession(botId, unlink = false) {
@@ -1154,12 +1540,49 @@ async function stopSession(botId, unlink = false) {
 
 let version;
 try {
-  ({ version } = await fetchLatestBaileysVersion());
+  // جلب النسخة الحية من web.whatsapp.com (وليس GitHub stale)
+  const live = await fetchLatestWaWebVersion();
+  if (live.version && Array.isArray(live.version) && live.version.length === 3) {
+    version = live.version;
+    console.log(`[engine] using live WA version ${version.join(".")}`);
+  } else {
+    throw new Error("invalid live version");
+  }
 } catch {
-  console.warn("[engine] using default WA version");
+  version = [2, 3000, 1043857760];
+  console.warn("[engine] using fallback WA version");
 }
 
 console.log("[engine] running — polling every 3s");
+
+// Network connectivity diagnostic
+async function checkNetworkConnectivity() {
+  const https = await import("https");
+  return new Promise((resolve) => {
+    const req = https.get("https://web.whatsapp.com", { timeout: 10000 }, (res) => {
+      console.log(`[network] WhatsApp Web reachable: ${res.statusCode}`);
+      resolve(true);
+    });
+    req.on("error", (e) => {
+      console.error(`[network] Cannot reach WhatsApp Web: ${e.message}`);
+      console.error("[network] Check firewall/proxy settings - WhatsApp requires ports 443 and 5222");
+      resolve(false);
+    });
+    req.on("timeout", () => {
+      console.error("[network] Connection to WhatsApp Web timed out");
+      console.error("[network] Check firewall/proxy settings - WhatsApp requires ports 443 and 5222");
+      req.destroy();
+      resolve(false);
+    });
+  });
+}
+
+// Run network check on startup
+checkNetworkConnectivity().then((ok) => {
+  if (!ok) {
+    console.warn("[engine] Network issues detected - connections may fail");
+  }
+});
 
 setInterval(async () => {
   try {
@@ -1174,22 +1597,72 @@ setInterval(async () => {
     // تحديث الكاش حتى ترى المعالجات الجارية الإعدادات الجديدة فوراً
     for (const b of bots) latestBots.set(b.id, b);
 
+    // تنظيف الجلسات العالقة (بدأت ولم تتصل خلال MAX_STARTING_TIME)
+    for (const [botId, startTime] of startingTimestamps) {
+      if (Date.now() - startTime > MAX_STARTING_TIME) {
+        console.warn(`[poll] stuck session detected for ${botId}, clearing...`);
+        startingBots.delete(botId);
+        startingTimestamps.delete(botId);
+        sessions.delete(botId);
+      }
+    }
+
+    const activeStartPhones = new Set();
     for (const bot of bots) {
-      if (bot.command === "unlink" && !sessions.has(bot.id)) {
+      if (bot.command === "unlink") {
+        if (sessions.has(bot.id)) {
+          await stopSession(bot.id, true);
+        }
+        await supabase.from("bot_auth").delete().eq("bot_id", bot.id);
+        await supabase.from("bot_keys").delete().eq("bot_id", bot.id);
+        invalidSessions.delete(bot.id);
+        sessionFailures.delete(bot.id);
+        sessionRetryAt.delete(bot.id);
         await updateBot(bot.id, {
           command: "stop",
           status: "disconnected",
           linked_number: null,
           qr: null,
+          pair_code: null,
         });
         continue;
       }
-      if (bot.command === "start" && !sessions.has(bot.id)) {
-        await startSession(bot, version);
+      if (bot.command === "start") {
+        const rawPhone = bot.phone || bot.linked_number || "";
+        const digits = rawPhone.replace(/\D/g, "");
+        if (digits && activeStartPhones.has(digits)) {
+          console.warn(`[poll] Duplicate bot for phone +${digits} (${bot.id}) skipped to prevent WhatsApp pairing conflict`);
+          continue;
+        }
+        if (digits) activeStartPhones.add(digits);
+
+        // إذا كان البوت بحالة pending (طلب ربط جديد)، فك حظره من invalidSessions
+        if (bot.status === "pending") {
+          invalidSessions.delete(bot.id);
+        }
+        const lastRetry = sessionRetryAt.get(bot.id) || 0;
+        const now = Date.now();
+        const fails = sessionFailures.get(bot.id) || 0;
+        
+        // تحقق إذا كانت الجلسة قيد التشغيل أو في انتظار إعادة المحاولة
+        const hasActiveSession = sessions.has(bot.id) || startingBots.has(bot.id);
+        const waitingForRetry = now < lastRetry;
+        const maxFailuresReached = fails >= MAX_CONSECUTIVE_FAILURES;
+        const isInvalidSession = invalidSessions.has(bot.id);
+        
+        // لا تبدأ جلسة جديدة إذا:
+        // - فيه جلسة نشطة
+        // - في انتظار إعادة المحاولة
+        // - وصل الحد الأقصى للفشل
+        // - الجلسة معلنة كغير صالحة (401)
+        if (!hasActiveSession && !waitingForRetry && !maxFailuresReached && !isInvalidSession) {
+          sessionRetryAt.set(bot.id, now);
+          await startSession(bot, version);
+        }
       }
       if (bot.command === "stop" && sessions.has(bot.id)) {
         await stopSession(bot.id);
-        await updateBot(bot.id, { status: "disconnected", qr: null });
+        await updateBot(bot.id, { status: "disconnected", qr: null, pair_code: null });
       }
     }
 
@@ -1319,8 +1792,8 @@ setInterval(async () => {
 
         if (!sender) continue; // ننتظر اتصالاً كاملاً
         try {
-          const digits = String(q.to_number ?? "").replace(/\D/g, "");
-          const jid = digits.includes("@") ? digits : `${digits}@s.whatsapp.net`;
+          const raw = String(q.to_number ?? "").trim();
+          const jid = raw.includes("@") ? raw : `${raw.replace(/\D/g, "")}@s.whatsapp.net`;
           await sender.sock.sendMessage(jid, { text: q.message });
           await supabase
             .from("notify_queue")

@@ -5,10 +5,10 @@ import { usePathname } from "next/navigation";
 
 const tabs = [
   { href: "/dashboard", label: "البوتات", icon: "M12 8V4H8 M4.92 4h14.16a1 1 0 0 1 .99 1.1l-.87 12.14a2 2 0 0 1-2 1.86H6.83a2 2 0 0 1-2-1.86L3.93 5.1A1 1 0 0 1 4.92 4z" },
-  { href: "/dashboard/queen", label: "QUEEN", icon: "M12 3a3 3 0 0 0-3 3v1H7a2 2 0 0 0-2 2v1h14V9a2 2 0 0 0-2-2h-2V6a3 3 0 0 0-3-3z M5 12h14l-1 9H6z" },
-  { href: "/dashboard/wallet", label: "المحفظة", icon: "M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1" },
+  { href: "/dashboard/messages", label: "الرسائل", icon: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" },
+  { href: "/dashboard/status-hub", label: "الحالات", icon: "M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" },
   { href: "/dashboard/gemini", label: "الذكاء", icon: "M12 2a9 9 0 1 0 9 9 M12 8l2.5 2.5L12 13l-2.5-2.5z M12 13v4" },
-  { href: "/dashboard/antilinks", label: "الحماية", icon: "M10 14a5 5 0 0 0 7.5.05l3-3a5 5 0 0 0-7-7l-1.5 1.5 M14 10a5 5 0 0 0-7.5-.05l-3 3a5 5 0 0 0 7 7l1.5-1.5" },
+  { href: "/dashboard/wallet", label: "المحفظة", icon: "M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1" },
 ];
 
 export default function BottomNav() {

@@ -14,7 +14,7 @@ export default function QueenPage() {
   useEffect(() => {
     (async () => {
       const supabase = createClient();
-      const { data } = await supabase.from("bots").select("id,name,linked_number,settings");
+      const { data } = await supabase.from("bots").select("id,name,linked_number,phone,settings");
       const list = data ?? [];
       setBots(list);
       setSelected(list[0]?.id ?? "");
@@ -56,7 +56,7 @@ export default function QueenPage() {
             <select className="input" value={selected} onChange={(e) => pick(e.target.value)}>
               {bots.map((b) => (
                 <option key={b.id} value={b.id}>
-                  {b.name} — {b.linked_number}
+                  {b.name} — {b.linked_number || b.phone || "غير متصل"}
                 </option>
               ))}
             </select>

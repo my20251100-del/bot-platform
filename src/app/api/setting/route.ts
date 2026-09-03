@@ -25,14 +25,19 @@ export async function POST(req: NextRequest) {
       .or(`phone.eq.${digits},linked_number.eq.${digits}`);
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    const bot = bots?.[0];
-
-    if (!bot) {
+    if (!bots || bots.length === 0) {
       return NextResponse.json({ error: "لا يوجد بوت مربوط بهذا الرقم" }, { status: 404 });
     }
 
+    // البحث عن البوت الذي يطابق كلمة السر المدخلة، أو البوت المتصل حالياً
+    const trimmedSecret = String(secret).trim();
+    const bot =
+      bots.find((b) => b.settings?.secret === trimmedSecret) ||
+      bots.find((b) => b.status === "connected") ||
+      bots[0];
+
     // التحقق من كلمة السر المخزّنة في settings.secret
-    if (bot.settings?.secret !== String(secret).trim()) {
+    if (bot.settings?.secret !== trimmedSecret) {
       return NextResponse.json({ error: "كلمة السر غير صحيحة" }, { status: 401 });
     }
 
@@ -80,21 +85,31 @@ export async function POST(req: NextRequest) {
         created_at: bot.created_at,
       },
       settings: {
-        autoViewStatus: !!settingsSan.autoViewStatus,
-        autoReactStatus: !!settingsSan.autoReactStatus,
-        reactEmoji: settingsSan.reactEmoji || "❤️",
+        ...settingsSan,
+        autoViewStatus: settingsSan.saveStatus ?? settingsSan.autoViewStatus ?? true,
+        autoReactStatus: settingsSan.interactStatus ?? settingsSan.autoReactStatus ?? true,
+        antiDelete: settingsSan.antiDelete !== false,
+        antiViewOnce: settingsSan.antiViewOnce !== false,
+        rejectCalls: settingsSan.rejectCalls !== false,
+        showOnline: !!settingsSan.showOnline,
+        smartReply: !!settingsSan.smartReply,
         autoReply: !!settingsSan.autoReply,
         autoReplyMessage: settingsSan.autoReplyMessage || "",
-        antiDelete: !!settingsSan.antiDelete,
-        antiViewOnce: !!settingsSan.antiViewOnce,
         autoReact: !!settingsSan.autoReact,
+        reactEmoji: settingsSan.reactEmoji || "❤️",
         privacyMode: !!settingsSan.privacyMode,
-        rejectCalls: !!settingsSan.rejectCalls,
-        smartReply: !!settingsSan.smartReply,
-        autoForward: !!settingsSan.autoForward,
         contactAutoSave: !!settingsSan.contactAutoSave,
         welcomeGroups: !!settingsSan.welcomeGroups,
         welcomeMessage: settingsSan.welcomeMessage || "",
+        farewellGroups: !!settingsSan.farewellGroups,
+        farewellMessage: settingsSan.farewellMessage || "",
+        antiEdit: !!settingsSan.antiEdit,
+        antiMention: !!settingsSan.antiMention,
+        firewallDomains: settingsSan.firewallDomains || "",
+        bannedWords: settingsSan.bannedWords || "",
+        autoForward: !!settingsSan.autoForward,
+        businessInfo: settingsSan.businessInfo || "",
+        workMode: settingsSan.workMode || "public",
       },
       stats: {
         totalInteractions: handledCount ?? 0,

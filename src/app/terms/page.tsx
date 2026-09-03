@@ -34,7 +34,7 @@ export default function TermsPage() {
             </section>
             <section>
               <h2 className="text-lg font-bold text-white">6. إخلاء المسؤولية</h2>
-              <p className="mt-2">نقدم المنصة "كما هي" دون ضمانات صريحة أو ضمنية بشأن توفرها أو عدم انقطاعها. قد نعدّل الشروط مستقبلاً وسيُنشر أي تعديل هنا.</p>
+              <p className="mt-2">نقدم المنصة &quot;كما هي&quot; دون ضمانات صريحة أو ضمنية بشأن توفرها أو عدم انقطاعها. قد نعدّل الشروط مستقبلاً وسيُنشر أي تعديل هنا.</p>
             </section>
           </div>
         </div>

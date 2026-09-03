@@ -97,6 +97,55 @@ export default function DashboardLive({
         </Reveal>
       </div>
 
+      {/* شريط الميزات الفورية النشطة (الحالات، الرسائل، الخصوصية) */}
+      <Reveal delay={0.55}>
+        <div className="my-6 rounded-2xl border border-accent/40 bg-surface/90 p-5 shadow-xl backdrop-blur-xl">
+          <div className="flex items-center justify-between border-b border-border/50 pb-3 mb-4">
+            <div className="flex items-center gap-2 font-bold text-base text-fg">
+              <span className="text-xl">⚡</span>
+              <span>الخواص السحابية النشطة في بوتك</span>
+            </div>
+            <span className="rounded-full bg-matrix/15 px-2.5 py-0.5 text-xs font-bold text-matrix">
+              تعمل 24/7 سحابياً ✓
+            </span>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Link
+              href="/dashboard/status-hub"
+              className="group rounded-xl border border-border/70 bg-elevated/50 p-3.5 transition hover:border-accent hover:bg-elevated flex items-center justify-between"
+            >
+              <div className="flex items-center gap-3">
+                <span className="grid h-10 w-10 place-items-center rounded-xl bg-accent/15 text-accent text-xl group-hover:scale-110 transition">
+                  👁️
+                </span>
+                <div>
+                  <h4 className="font-bold text-sm text-fg">مشاهدة الحالات والتفاعل</h4>
+                  <p className="text-xs text-muted mt-0.5">مشاهدة آلية + تفاعل قلوب ❤️</p>
+                </div>
+              </div>
+              <span className="text-xs text-accent font-semibold">إدارة ←</span>
+            </Link>
+
+            <Link
+              href="/dashboard/messages"
+              className="group rounded-xl border border-border/70 bg-elevated/50 p-3.5 transition hover:border-matrix hover:bg-elevated flex items-center justify-between"
+            >
+              <div className="flex items-center gap-3">
+                <span className="grid h-10 w-10 place-items-center rounded-xl bg-matrix/15 text-matrix text-xl group-hover:scale-110 transition">
+                  💬
+                </span>
+                <div>
+                  <h4 className="font-bold text-sm text-fg">رسائل العملاء والرد التلقائي</h4>
+                  <p className="text-xs text-muted mt-0.5">استلام الرسائل والردود الذكية</p>
+                </div>
+              </div>
+              <span className="text-xs text-matrix font-semibold">عرض ←</span>
+            </Link>
+          </div>
+        </div>
+      </Reveal>
+
       <Reveal delay={0.6}>
         <CreateBotForm hasBot={bots.length > 0} />
       </Reveal>

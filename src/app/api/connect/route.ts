@@ -17,6 +17,8 @@ function toBotPayload(b: any, digits: string) {
     qr: b.qr ?? null,
     isPending,
     secret: b.settings?.secret ?? null,
+    last_error: b.metadata?.last_error ?? null,
+    attempt: b.metadata?.attempt ?? 0,
   };
 }
 
@@ -29,7 +31,7 @@ export async function GET(req: NextRequest) {
     const admin = createAdmin();
     const { data: bots, error } = await admin
       .from("bots")
-      .select("id, name, status, command, link_method, pair_code, qr, linked_number, settings, phone")
+      .select("id, name, status, command, link_method, pair_code, qr, linked_number, settings, phone, metadata")
       .or(`phone.eq.${number},linked_number.eq.${number}`);
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -107,12 +109,12 @@ export async function POST(req: NextRequest) {
 
     const { data: bots, error } = await admin
       .from("bots")
-      .select("id, name, status, command, link_method, pair_code, qr, linked_number, settings, phone, user_id")
+      .select("id, name, status, command, link_method, pair_code, qr, linked_number, settings, phone, metadata")
       .or(`phone.eq.${digits},linked_number.eq.${digits}`);
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-    let bot = bots?.[0];
+    const bot = bots?.[0];
 
     // لم يجد بوتاً لهذا الرقم — أنشئ حساباً وبوتاً واحداً فقط (بدون كود وهمي)
     if (!bot) {
@@ -138,17 +140,40 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, bot: toBotPayload(created, digits) });
     }
 
-    // إعادة بدء الربط: يشغّل المحرك لتوليد كود اقتران / QR حقيقي
+    // إعادة بدء الربط: يشغّل المحرك لتوليد كود اقتران / QR حقيقي.
+    // نمسح أي جلسة قديمة غير مكتملة (creds التالفة تسبب 401) لنبدأ اقتراناً نظيفاً.
     if (action === "start") {
+      const admin2 = createAdmin();
+      await admin2.from("bot_auth").delete().eq("bot_id", bot.id);
+      await admin2.from("bot_keys").delete().eq("bot_id", bot.id);
+
+      // إيقاف أي بوتات مكررة أخرى لنفس الرقم فوراً لمنع تضارب أكواد الاقتران في واتساب
+      await admin
+        .from("bots")
+        .update({ command: "stop", status: "disconnected", pair_code: null, qr: null })
+        .or(`phone.eq.${digits},linked_number.eq.${digits}`)
+        .neq("id", bot.id);
+
       const { error: upErr } = await admin
         .from("bots")
-        .update({ command: "start", qr: null, pair_code: null, status: "pending" })
+        .update({
+          command: "start",
+          qr: null,
+          pair_code: null,
+          status: "pending",
+          phone: digits,
+          link_method: "pair_code",
+          metadata: { last_error: null, error_at: null, attempt: 0 },
+        })
         .eq("id", bot.id);
       if (upErr) return NextResponse.json({ error: upErr.message }, { status: 500 });
       bot.command = "start";
       bot.status = "pending";
+      bot.phone = digits;
+      bot.link_method = "pair_code";
       bot.qr = null;
       bot.pair_code = null;
+      bot.metadata = { last_error: null, error_at: null, attempt: 0 };
     }
 
     return NextResponse.json({ ok: true, bot: toBotPayload(bot, digits) });

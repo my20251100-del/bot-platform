@@ -2,221 +2,294 @@ import Link from "next/link";
 import SiteHeader from "@/components/site-header";
 import SiteFooter from "@/components/site-footer";
 import ActiveBotsChArt from "@/components/active-bots-chart";
+import HomeHeroConnect from "@/components/home-hero-connect";
+import HomeBotSimulation from "@/components/home-bot-simulation";
+import HomeFaqAccordion from "@/components/home-faq-accordion";
 
-const miniFeatures = [
+const coreFeatures = [
   {
-    title: "مضاد العرض مرة واحدة",
-    desc: "شاهد الوسائط المقيدة بسهولة — دون أن يعرف المرسل.",
-    icon: "M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z",
+    icon: "🛡️",
+    title: "مضاد حذف الرسائل والوسائط",
+    desc: "إذا أرسل لك أي شخص رسالة أو صورة أو تسجيلاً صوتياً ثم حذفه للجميع، يلتقطها البوت فوراً ويحفظها في محادثتك الخاصة لتراها كاملة.",
+    badge: "حماية 100%",
   },
   {
-    title: "مضاد الحذف",
-    desc: "تتبع الرسائل المحذوفة واحتفظ بها حتى بعد حذفها من الجميع.",
-    icon: "M3 3v18h18 M8.56 2.75c4.37 6.03 6.02 9.42 8.03 17.72 m2.54-15.38c-3.72 4.35-8.94 5.66-16.88 5.85",
+    icon: "👁️",
+    title: "مشاهدة الحالات والتفاعل التلقائي",
+    desc: "يشاهد البوت حالات جهات اتصالك أولاً بأول فور نشرها، مع إمكانية التفاعل التلقائي بالقلوب والإيموجي المخصص لكل حالة.",
+    badge: "تفاعل آلي",
   },
   {
-    title: "التحكم بالخصوصية",
-    desc: "تحكم كامل بظهورك: علامات القراءة، حالة الكتابة، وآخر ظهور.",
-    icon: "M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1 1 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z",
+    icon: "🤖",
+    title: "رد تلقائي ذكي بالذكاء الاصطناعي",
+    desc: "مساعد مدمج مدعوم بـ Google Gemini يفهم أسئلة عملائك ويرد بلباقة ودقة 24/7 دون أي تدخل منك، مع دعم الردود المخصصة.",
+    badge: "مدعوم بـ AI",
   },
   {
-    title: "أدوات الوسائط",
-    desc: "حمّل الوسائط من المنصات الاجتماعية مباشرة عبر بوتك.",
-    icon: "M4 16l4.58-4.58a2 2 0 0 1 2.83 0L16 16 M4 20h16 M14.5 13.5l1.08-1.08a2 2 0 0 1 2.83 0L22 16 M3 3v18h18 M8 8h.01",
+    icon: "🔒",
+    title: "كاشف وسائط النظرة الواحدة",
+    desc: "يسمح لك بمشاهدة وحفظ الصور والفيديوهات المرسلة بخاصية (عرض لمرة واحدة - ViewOnce) بدون قيود وبسرية تامة.",
+    badge: "خصوصية قصوى",
   },
   {
-    title: "تفاعل تلقائي",
-    desc: "تفاعلات آلية مع الحالات والرسائل بالإيموجي الذي تختاره.",
-    icon: "M11.48 3.499a.5.5 0 0 1 .501 0l4.79 3.227a.5.5 0 0 1 .245.46v4.286a.5.5 0 0 1-.246.46L12 15.09l-4.77-3.158a.5.5 0 0 1-.23-.44v-4.29a.5.5 0 0 1 .246-.46z M12 19v2",
+    icon: "📢",
+    title: "مجدول النشر والرسائل الجماعية",
+    desc: "جدول منشوراتك الترويجية والرسائل الدورية لقنواتك ومجموعاتك في أوقات الذروة بضغطة زر وبدون مجهود يدوي متكرر.",
+    badge: "تسويق ونمو",
   },
   {
-    title: "رد تلقائي ذكي",
-    desc: "ردود فورية بالذكاء الاصطناعي على كل الرسائل الواردة.",
-    icon: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z",
+    icon: "💰",
+    title: "محفظة الكريدت ونظام الإحالات",
+    desc: "اجمع رصيد الكريدت مجاناً يومياً، وشارك كود إحالتك لتربح 10 كريدت عن كل صديق يشترك، واستبدله بميزات حصرية وترقيات برو.",
+    badge: "مكافآت مجانية",
   },
 ];
 
-const toolbox = [
-  { icon: "🤖", t: "بوت واتساب مجاني", d: "اربط بوتاً قوياً في ثوانٍ — رد تلقائي، مضاد حذف، وأدوات الحالات. مجاني 100%، بدون تطبيق أو برمجة." },
-  { icon: "🧠", t: "مساعد ذكاء اصطناعي", d: "مساعد مدمج يجيب على أسئلتك ويرشدك في المنصة ليلاً ونهاراً." },
-  { icon: "🎁", t: "مكافآت الإحالة", d: "شارك رابطك — تحصل أنت وصديقك على 10 كريدت فوراً. بدون حدود." },
-  { icon: "👑", t: "عضوية برو", d: "حدود يومية أعلى، تفاعل مع أي قناة بدون تحقق، وإزالة الإعلانات." },
-  { icon: "📢", t: "أعلن لعلامتك", d: "شغّل إعلاناتك عبر المنصة بالكريدت. معتمدة وتدور بعدالة مع إحصائيات." },
-  { icon: "🔐", t: "آمن وثلاثي اللغات", d: "بياناتك محمية ومتحقق منها على خوادمنا. دعم كامل بالعربية والإنجليزية." },
-];
-
-const walletRewards = [
-  { emoji: "💰", t: "محفظة الكريدت", d: "اربحها يومياً وبالإحالات، واشترِ المزيد أو صرفها على النمو." },
-  { emoji: "💎", t: "عملة الكريدت الذهبي", d: "العملة المميزة للتفاعلات والمتابعين وبرو والإعلانات." },
-  { emoji: "📅", t: "المطالبة اليومية", d: "اجمع 10 كريدت مجاناً كل يوم — بضغطة واحدة من لوحة التحكم." },
-  { emoji: "🎡", t: "العجلة اليومية", d: "دوّر العجلة مرة يومياً لفرصة ربح كريدت أو كريدت ذهبي. حظك!" },
-  { emoji: "👀", t: "شاهد واربح", d: "شاهد إعلانات قصيرة في لوحة التحكم واربح حتى 10 كريدت يومياً." },
-  { emoji: "🔄", t: "تحويل فوري", d: "حوّل الكريدت ذهاباً وإياباً في أي وقت بسعر عادل." },
+const comparisons = [
+  {
+    feature: "التشغيل والاستقرار السحابي",
+    pro: "سحابي 24/7 حتى لو انقطع الإنترنت أو أغلق جوالك",
+    gb: "يتوقف فوراً عند إغلاق التطبيق أو انقطاع النت",
+  },
+  {
+    feature: "أمان الحساب والحظر",
+    pro: "آمن 100% بمحاكاة المتصفحات الرسمية وضبط التردد",
+    gb: "معرض للحظر الدائم والمفاجئ من واتساب",
+  },
+  {
+    feature: "الخصوصية وتشفير البيانات",
+    pro: "تشفير طرف إلى طرف معتمد من بروتوكول Signal",
+    gb: "تطبيقات غير موثوقة تسحب جهات الاتصال والرسائل",
+  },
+  {
+    feature: "سرعة الربط والإعداد",
+    pro: "ربط فوري خلال 10 ثوانٍ بكود الاقتران",
+    gb: "يحتاج تنزيل ملفات APK مجهولة وتعديل النظام",
+  },
 ];
 
 const steps = [
-  { n: "01", title: "أنشئ حسابك", desc: "سجّل مجاناً واحصل على كريدت فوراً — بدون بطاقة ائتمان." },
-  { n: "02", title: "اعبّئ أو اربح", desc: "طالب يومياً، دوّر العجلة، شاهد الإعلانات، أو عبّئ عبر واتساب." },
-  { n: "03", title: "انمُ", desc: "شغّل تفاعلات ومتابعين لبوتاتك وقنواتك في دقائق." },
+  {
+    step: "01",
+    title: "أدخل رقم هاتفك",
+    desc: "اكتب رقم هاتفك مع الرمز الدولي في خانة الربط السريع لتحصل على كود الاقتران فوراً.",
+  },
+  {
+    step: "02",
+    title: "أدخل الكود في واتساب",
+    desc: "افتح واتساب > الأجهزة المرتبطة > ربط برقم الهاتف، واكتب الكود المكون من 8 خانات.",
+  },
+  {
+    step: "03",
+    title: "استمتع بالأتمتة والحماية",
+    desc: "مبروك! بوتك الآن شغال 24/7 سحابياً، وتحكم في كل الميزات بضغطة زر من صفحة الإعدادات.",
+  },
 ];
 
-const comingSoon = [
-  "بوت تيليجرام مجاني", "تحميل وسائط اجتماعية", "موسيقى خلفية",
-  "بث كريبتو وكريكيت مباشر", "أخبار مباشرة", "تحميل أفلام",
-  "استضافة ويب", "محادثة مباشرة", "أدوات ذكاء اصطناعي", "تعليم أونلاين",
-];
 export default function Home() {
   return (
     <>
       <SiteHeader />
 
-      <main>
-        {/* هيرو - نسخة البوت الصغير */}
-        <section className="relative overflow-hidden">
-          <div className="pointer-events-none absolute -top-40 left-1/4 h-80 w-80 rounded-full bg-accent/10 blur-3xl" />
-          <div className="pointer-events-none absolute top-20 right-0 h-64 w-64 rounded-full bg-accent/5 blur-3xl" />
-          <div className="relative mx-auto max-w-4xl px-4 py-16 text-center sm:py-24">
-            <span className="badge mb-6">
-              <span className="status-dot" />
-              بوت برو — أتمتة واتساب مبسّطة
-            </span>
-            <h1 className="text-balance text-4xl font-bold tracking-tight cyber-title sm:text-6xl">
-              سريع، آمن،{" "}
-              <span className="bg-gradient-to-r from-accent to-fuchsia-400 bg-clip-text text-transparent">
-                وأتمتة مبسّطة
+      <main className="relative overflow-hidden">
+        {/* التوهجات الخلفية العامة */}
+        <div className="pointer-events-none absolute -top-40 left-1/2 -translate-x-1/2 h-[500px] w-[800px] rounded-full bg-accent/10 blur-[120px]" />
+        <div className="pointer-events-none absolute top-[600px] -right-40 h-[400px] w-[400px] rounded-full bg-cyber/10 blur-[100px]" />
+
+        {/* 1. قسم الهيرو الرئيسي */}
+        <section className="relative px-4 pt-16 pb-12 sm:px-6 sm:pt-24 sm:pb-20">
+          <div className="mx-auto max-w-5xl text-center">
+            {/* إشعار التحديث */}
+            <div className="inline-flex items-center gap-2 rounded-full border border-accent/40 bg-surface/80 px-4 py-1.5 text-xs sm:text-sm font-medium text-accent shadow-lg shadow-accent/10 backdrop-blur-md">
+              <span className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-matrix opacity-75"></span>
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-matrix"></span>
+              </span>
+              منصة أتمتة واتساب الأقوى — الإصدار 2.0 فائق السرعة
+            </div>
+
+            {/* العنوان العريض */}
+            <h1 className="mt-8 text-balance text-4xl font-extrabold tracking-tight sm:text-6xl lg:text-7xl">
+              تحكّم بواتسابك، رد بذكاء،{" "}
+              <span className="bg-gradient-to-r from-accent via-neon to-fuchsia-400 bg-clip-text text-transparent">
+                واحمِ خصوصيتك 24/7
               </span>
             </h1>
-            <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-muted">
-              أفضل المميزات بأقل إعداد. اربط بوتك وانشر خلال 30 ثانية —
-              رد تلقائي، مضاد حذف، مشاهدة حالات، وتفاعل ذكي. مجاني للأبد.
+
+            {/* الوصف */}
+            <p className="mx-auto mt-6 max-w-3xl text-base sm:text-xl leading-relaxed text-muted">
+              اربط رقمك في <strong className="text-fg">10 ثوانٍ فقط</strong> بكود الاقتران. ردود فورية بالذكاء الاصطناعي، مضاد حذف الرسائل، مشاهدة الحالات التلقائية، وجدولة النشر — كل ذلك سحابياً بدون الحاجة لبقاء هاتفك متصلاً بالإنترنت!
             </p>
-            <div className="mt-10 flex flex-wrap justify-center gap-3">
-              <Link href="/signup" className="btn-primary">
-                ابدأ النشر الآن
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
+
+            {/* صندوق الربط السريع المباشر في الهيرو */}
+            <HomeHeroConnect />
+
+            {/* أزرار الإجراء السريع */}
+            <div className="mt-8 flex flex-wrap items-center justify-center gap-3 sm:gap-4">
+              <Link href="/connect" className="btn-primary text-sm sm:text-base">
+                ⚡ صفحة الربط المباشر
               </Link>
-              <a href="#capabilities" className="btn-primary !bg-elevated hover:!bg-border">
-                مميزات البوت
+              <a href="#features" className="rounded-xl border border-border/80 bg-surface/90 px-5 py-3 text-sm sm:text-base font-semibold text-fg transition hover:border-accent/60 hover:text-white">
+                استكشف المميزات ↓
               </a>
-              <a href="/dashboard" className="btn-primary !border !border-accent/40 !bg-transparent !text-accent hover:!bg-accent/10">
-                ⚙️ الإعدادات
-              </a>
+              <Link href="/login" className="rounded-xl border border-border/80 bg-elevated/70 px-5 py-3 text-sm sm:text-base font-semibold text-muted transition hover:border-accent/40 hover:text-white">
+                دخول المشتركين 👤
+              </Link>
             </div>
-            <div className="mt-14 grid grid-cols-3 gap-4 sm:max-w-md sm:mx-auto">
-              {[["400+", "كريدت هدية"], ["50:1", "سعر التحويل"], ["24/7", "دعم نشط"]].map(([v, l]) => (
-                <div key={l}>
-                  <div className="text-2xl font-bold text-accent">{v}</div>
-                  <div className="text-xs text-muted">{l}</div>
-                </div>
-              ))}
+          </div>
+
+          {/* 2. مجسم المحاكاة التفاعلية الحية */}
+          <HomeBotSimulation />
+        </section>
+
+        {/* 3. شريط إحصائيات الأداء والثقة */}
+        <section className="border-y border-border/70 bg-surface/60 backdrop-blur-xl">
+          <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
+            <div className="grid grid-cols-2 gap-6 md:grid-cols-4">
+              <div className="text-center">
+                <div className="text-3xl sm:text-4xl font-extrabold text-accent font-mono">+15,000</div>
+                <p className="mt-1 text-xs sm:text-sm text-muted">بوت واتساب نشط سحابياً</p>
+              </div>
+              <div className="text-center">
+                <div className="text-3xl sm:text-4xl font-extrabold text-matrix font-mono">99.98%</div>
+                <p className="mt-1 text-xs sm:text-sm text-muted">نسبة تشغيل مستمر دون انقطاع</p>
+              </div>
+              <div className="text-center">
+                <div className="text-3xl sm:text-4xl font-extrabold text-fuchsia-400 font-mono">+5.4M</div>
+                <p className="mt-1 text-xs sm:text-sm text-muted">رسالة وحالة تمت معالجتها</p>
+              </div>
+              <div className="text-center">
+                <div className="text-3xl sm:text-4xl font-extrabold text-neon font-mono">&lt; 0.15s</div>
+                <p className="mt-1 text-xs sm:text-sm text-muted">سرعة استجابة الرد الذكي</p>
+              </div>
             </div>
           </div>
         </section>
 
-        {/* قدرات البوت (النسخة المصغرة) */}
-        <section id="capabilities" className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
-          <h2 className="mb-3 text-center text-3xl font-bold">البوت المصغّر</h2>
-          <p className="mb-12 text-center text-muted">أفضل المميزات، أقل إعداد — كل شيء بأوتوماتيك.</p>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {miniFeatures.map((f) => (
-              <div key={f.title} className="card flex items-start gap-4 p-6 transition-colors hover:border-accent/50">
-                <span className="grid h-11 w-11 flex-shrink-0 place-items-center rounded-xl bg-accent/15 text-accent">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={f.icon}/></svg>
-                </span>
+        {/* 4. مميزات البوت الخارقة */}
+        <section id="features" className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
+          <div className="text-center max-w-3xl mx-auto mb-14">
+            <span className="badge mb-3">القوة والتحكم الكامل</span>
+            <h2 className="text-3xl sm:text-5xl font-extrabold tracking-tight">
+              كل ما تحتاجه لأتمتة واتسابك في مكان واحد
+            </h2>
+            <p className="mt-4 text-base sm:text-lg text-muted">
+              صممنا بوت برو ليعطيك ميزات حصرية تفوق التطبيقات المعدلة، مع أمان سحابي تام لا يعرض رقمك للخطر.
+            </p>
+          </div>
+
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {coreFeatures.map((feat) => (
+              <div
+                key={feat.title}
+                className="card group relative flex flex-col justify-between p-6 sm:p-7 transition-all duration-300 hover:-translate-y-1 hover:border-accent/60 hover:shadow-xl hover:shadow-accent/10"
+              >
                 <div>
-                  <h3 className="font-semibold">{f.title}</h3>
-                  <p className="mt-1 text-sm leading-relaxed text-muted">{f.desc}</p>
+                  <div className="flex items-center justify-between mb-4">
+                    <span className="text-4xl">{feat.icon}</span>
+                    <span className="rounded-full border border-accent/30 bg-accent/10 px-3 py-1 text-xs font-semibold text-accent">
+                      {feat.badge}
+                    </span>
+                  </div>
+                  <h3 className="text-xl font-bold text-fg group-hover:text-accent transition">
+                    {feat.title}
+                  </h3>
+                  <p className="mt-2.5 text-sm sm:text-base leading-relaxed text-muted">
+                    {feat.desc}
+                  </p>
                 </div>
               </div>
             ))}
           </div>
         </section>
 
-        {/* البوتات النشطة - رسم بياني حي */}
+        {/* 5. الرسم البياني لنشاط البوتات الحية */}
         <ActiveBotsChArt />
 
-        {/* كل شيء في مكان واحد */}
-        <section className="border-y border-border/60 bg-surface/50">
-          <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
-            <h2 className="mb-3 text-center text-3xl font-bold">كل شيء في مكان واحد</h2>
-            <p className="mb-12 text-center text-muted">أكثر من مجرد بوت — مجموعة أدوات كاملة تتوسّع دائماً.</p>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {toolbox.map((f) => (
-                <div key={f.t} className="card p-6">
-                  <span className="text-3xl">{f.icon}</span>
-                  <h3 className="mt-4 font-semibold">{f.t}</h3>
-                  <p className="mt-1 text-sm leading-relaxed text-muted">{f.d}</p>
-                </div>
-              ))}
+        {/* 6. مقارنة: بوت برو مقابل التطبيقات المعدلة (WhatsApp Plus / GB) */}
+        <section className="border-y border-border/70 bg-surface/40 py-20">
+          <div className="mx-auto max-w-5xl px-4 sm:px-6">
+            <div className="text-center mb-12">
+              <span className="badge mb-3">المقارنة العادلة</span>
+              <h2 className="text-3xl sm:text-4xl font-extrabold">لماذا يفضل الآلاف منصة بوت برو؟</h2>
+              <p className="mt-3 text-muted">مقارنة بين نظامنا السحابي المعتمد وبين نسخ واتساب المعدلة غير الآمنة</p>
             </div>
-          </div>
-        </section>
 
-        {/* المحفظة والمكافآت */}
-        <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
-          <h2 className="mb-3 text-center text-3xl font-bold">محفظتك ومكافآتك</h2>
-          <p className="mb-12 text-center text-muted">اقتصاد كريدت عادل — اربح يومياً، حوّل في أي وقت، وأنفق على النمو.</p>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {walletRewards.map((f) => (
-              <div key={f.t} className="card p-6 transition-colors hover:border-accent/50">
-                <span className="text-3xl">{f.emoji}</span>
-                <h3 className="mt-4 font-semibold">{f.t}</h3>
-                <p className="mt-1 text-sm leading-relaxed text-muted">{f.d}</p>
+            <div className="overflow-hidden rounded-2xl border border-border/80 bg-elevated/60 shadow-2xl">
+              <div className="grid grid-cols-3 bg-surface p-4 sm:p-5 text-sm sm:text-base font-bold border-b border-border">
+                <span className="text-muted">الميزة / المعيار</span>
+                <span className="text-accent flex items-center gap-1.5">🌟 منصة بوت برو</span>
+                <span className="text-red-400">⚠️ التطبيقات المعدلة (GB)</span>
               </div>
-            ))}
-          </div>
-        </section>
-
-        {/* كيف يعمل */}
-        <section className="border-y border-border/60 bg-surface/50">
-          <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
-            <h2 className="mb-12 text-center text-3xl font-bold">جاهز خلال 3 خطوات</h2>
-            <div className="grid gap-4 md:grid-cols-3">
-              {steps.map((s) => (
-                <div key={s.n} className="card p-6">
-                  <span className="grid h-10 w-10 place-items-center rounded-full bg-accent font-bold text-accent-fg">{s.n}</span>
-                  <h3 className="mt-4 font-semibold">{s.title}</h3>
-                  <p className="mt-1 text-sm leading-relaxed text-muted">{s.desc}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* قريباً */}
-        <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
-          <h2 className="mb-3 text-center text-3xl font-bold">قريباً</h2>
-          <p className="mb-12 text-center text-muted">نضيف خدمات جديدة باستمرار — ترقبوا المزيد.</p>
-          <div className="flex flex-wrap justify-center gap-3">
-            {comingSoon.map((item) => (
-              <span key={item} className="badge !px-5 !py-2.5 !text-sm !text-muted hover:!border-accent/50 hover:!text-white">
-                {item}
-              </span>
-            ))}
-          </div>
-        </section>
-
-        {/* التعليقات */}
-        <section className="border-y border-border/60 bg-surface/50">
-          <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6">
-            <h2 className="mb-8 text-center text-3xl font-bold">التعليقات</h2>
-            <div className="card glass p-8 text-center">
-              <p className="text-lg">سجّل الدخول للانضمام إلى المحادثة</p>
-              <div className="mt-6 flex justify-center gap-3">
-                <Link href="/signup" className="btn-primary !py-2.5 !px-6 text-sm">سجّل الآن</Link>
-                <Link href="/login" className="btn-primary !py-2.5 !px-6 text-sm !bg-elevated hover:!bg-border">تسجيل الدخول</Link>
+              <div className="divide-y divide-border/50 text-xs sm:text-sm">
+                {comparisons.map((row) => (
+                  <div key={row.feature} className="grid grid-cols-3 p-4 sm:p-5 items-center">
+                    <span className="font-semibold text-fg">{row.feature}</span>
+                    <span className="text-emerald-400 font-medium pe-2">{row.pro}</span>
+                    <span className="text-muted pe-2">{row.gb}</span>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
         </section>
 
-        {/* دعوة للتسجيل */}
-        <section className="mx-auto max-w-4xl px-4 py-20 text-center">
-          <h2 className="text-3xl font-bold">مستعد للنمو؟</h2>
-          <p className="mt-3 text-muted">انضم إلى المستخدمين الذين يستخدمون بوت برو لأتمتة قنواتهم وواتسابهم.</p>
-          <Link href="/signup" className="btn-primary mt-8">احجز مقعدك الآن</Link>
+        {/* 7. خطوات العمل البسيطة */}
+        <section className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
+          <div className="text-center mb-14">
+            <span className="badge mb-3">سهل وسريع</span>
+            <h2 className="text-3xl sm:text-4xl font-extrabold">ابدأ في 3 خطوات فقط</h2>
+            <p className="mt-3 text-muted">لا تحتاج لأي خبرة برمجية — كل شيء جاهز وتلقائي</p>
+          </div>
+
+          <div className="grid gap-6 md:grid-cols-3">
+            {steps.map((s) => (
+              <div key={s.step} className="card relative p-7 sm:p-8">
+                <span className="grid h-12 w-12 place-items-center rounded-2xl bg-accent font-mono text-xl font-black text-accent-fg shadow-lg shadow-accent/30 mb-6">
+                  {s.step}
+                </span>
+                <h3 className="text-xl font-bold text-fg">{s.title}</h3>
+                <p className="mt-2 text-sm sm:text-base leading-relaxed text-muted">{s.desc}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* 8. قسم الأسئلة الشائعة (Interactive FAQ Accordion) */}
+        <section className="border-t border-border/70 bg-surface/50 py-20">
+          <div className="mx-auto max-w-4xl px-4 sm:px-6">
+            <div className="text-center mb-12">
+              <span className="badge mb-3">إجابات واضحة</span>
+              <h2 className="text-3xl sm:text-4xl font-extrabold">الأسئلة الأكثر شيوعاً</h2>
+              <p className="mt-3 text-muted">كل ما تود معرفته عن طريقة عمل البوت والحماية والاشتراك</p>
+            </div>
+
+            <HomeFaqAccordion />
+          </div>
+        </section>
+
+        {/* 9. الدعوة النهائية للتسجيل والبدء */}
+        <section className="relative px-4 py-24 sm:px-6 text-center">
+          <div className="mx-auto max-w-4xl rounded-3xl border border-accent/50 bg-gradient-to-br from-surface via-elevated to-surface p-8 sm:p-14 shadow-2xl shadow-accent/15">
+            <h2 className="text-3xl sm:text-5xl font-extrabold tracking-tight">
+              جاهز لتحويل واتسابك إلى قوة خارقة؟
+            </h2>
+            <p className="mx-auto mt-4 max-w-2xl text-base sm:text-lg text-muted leading-relaxed">
+              انضم إلى آلاف المستخدمين والشركات الذين يعتمدون على بوت برو يومياً لإدارة أعمالهم وحماية خصوصيتهم وأتمتة محادثاتهم بالكامل.
+            </p>
+            <div className="mt-8 flex flex-wrap justify-center gap-4">
+              <Link href="/connect" className="btn-primary text-base font-bold px-8 py-3.5 shadow-xl shadow-accent/30">
+                ⚡ اربط بوتك الآن مجاناً
+              </Link>
+              <Link href="/signup" className="rounded-xl border border-border bg-surface px-8 py-3.5 text-base font-semibold text-fg transition hover:border-accent/60 hover:text-white">
+                إنشاء حساب في المنصة
+              </Link>
+            </div>
+            <p className="mt-4 text-xs text-muted">بدون بطاقة ائتمان • إعداد فوري في 10 ثوانٍ • مجاني للأبد</p>
+          </div>
         </section>
       </main>
+
       <SiteFooter />
     </>
   );

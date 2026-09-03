@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import type { PairResult } from "@/lib/backend";
 
 type BotRow = {
   id: string;
@@ -12,6 +11,7 @@ type BotRow = {
   pair_code: string | null;
   qr: string | null;
   linked_number: string | null;
+  phone?: string | null;
 };
 
 const statusStyles: Record<string, string> = {
@@ -36,7 +36,7 @@ export default function BotConnect({ initial }: { initial: BotRow }) {
     const { data } = await supabase
       .from("bots")
       .select(
-        "id, status, command, link_method, pair_code, qr, linked_number"
+        "id, status, command, link_method, pair_code, qr, linked_number, phone"
       )
       .eq("id", initial.id)
       .single();
@@ -52,7 +52,7 @@ export default function BotConnect({ initial }: { initial: BotRow }) {
       const { data } = await supabase
         .from("bots")
         .select(
-          "id, status, command, link_method, pair_code, qr, linked_number"
+          "id, status, command, link_method, pair_code, qr, linked_number, phone"
         )
         .eq("id", initial.id)
         .single();
@@ -70,25 +70,25 @@ export default function BotConnect({ initial }: { initial: BotRow }) {
     const supabase = createClient();
     if (command === "start") {
       // 1) مسح الكود القديم + تعليم البدء (أمر يقرؤه المحرك/الزامن).
-      await supabase.from("bots").update({ command, qr: null }).eq("id", bot.id);
+      await supabase.from("bots").update({ command, qr: null, pair_code: null, status: "pending" }).eq("id", bot.id);
+      // مسح بيانات المصادقة السابقة إذا لم يكن متصلاً لبدء جلسة اقتران نظيفة
+      if (bot.status !== "connected") {
+        await supabase.from("bot_auth").delete().eq("bot_id", bot.id);
+        await supabase.from("bot_keys").delete().eq("bot_id", bot.id);
+      }
       // 2) تشغيل الـ WhatsApp Client فعلياً عبر الـ Backend.
       try {
         const { initBot } = await import("@/lib/backend");
         await initBot(bot.id);
-              } catch (initErr) {
+      } catch (initErr) {
         console.warn("[init] backend غير متاح:", initErr);
-              }
+      }
       // 3) إن كان الربط عبر كود اقتران برقم، اطلب الكود من الـ Backend.
-      if (bot.link_method === "pair_code" && bot.linked_number) {
+      const targetPhone = bot.phone || bot.linked_number;
+      if (bot.link_method === "pair_code" && targetPhone) {
         try {
           const { requestPairing } = await import("@/lib/backend");
-          const pair: PairResult = await requestPairing(bot.id, bot.linked_number);
-          if (pair.pairingCode) {
-            await supabase
-              .from("bots")
-              .update({ pair_code: pair.pairingCode, status: "pending" })
-              .eq("id", bot.id);
-          }
+          await requestPairing(bot.id, targetPhone);
         } catch (pairErr) {
           console.warn("[pair] backend غير متاح:", pairErr);
         }
@@ -96,7 +96,7 @@ export default function BotConnect({ initial }: { initial: BotRow }) {
       // 4) تحديث فوري يعكس حالة/QR الـ Backend الحقيقية.
       await refresh();
     } else {
-      await supabase.from("bots").update({ command }).eq("id", bot.id);
+      await supabase.from("bots").update({ command, qr: null, pair_code: null }).eq("id", bot.id);
       if (command === "stop" || command === "unlink") {
         try {
           const { stopBot } = await import("@/lib/backend");
@@ -150,26 +150,41 @@ export default function BotConnect({ initial }: { initial: BotRow }) {
       {/* لوحة الربط */}
       {isPending && (
         <div className="mt-6 flex flex-col items-center gap-3 border-t border-border/60 pt-6">
-          {bot.qr ? (
-            <>
-              {/* eslint-disable-next-line @next/next/no-img-element -- data URL وليس ملفاً ثابتاً */}
-              <img src={bot.qr} alt="رمز QR" width={260} height={260} className="rounded-xl bg-white p-3" />
-              <p className="text-sm text-muted">
-                واتساب ← الإعدادات ← الأجهزة المرتبطة ← ربط جهاز ← امسح الرمز
-              </p>
-            </>
-          ) : bot.pair_code ? (
-            <>
-              <p className="text-sm text-muted">أدخل هذا الكود في جوالك:</p>
-              <p dir="ltr" className="font-mono text-4xl font-bold tracking-[0.35em] text-accent">
-                {bot.pair_code}
-              </p>
-              <p className="text-sm text-muted">
-                واتساب ← الإعدادات ← الأجهزة المرتبطة ← ربط برقم الهاتف
-              </p>
-            </>
+          {bot.link_method === "qr" ? (
+            bot.qr ? (
+              <>
+                {/* eslint-disable-next-line @next/next/no-img-element -- data URL وليس ملفاً ثابتاً */}
+                <img src={bot.qr} alt="رمز QR" width={260} height={260} className="rounded-xl bg-white p-3" />
+                <p className="text-sm text-muted">
+                  واتساب ← الأجهزة المرتبطة ← ربط جهاز ← امسح الرمز
+                </p>
+              </>
+            ) : (
+              <p className="animate-pulse text-sm text-muted">جارٍ توليد رمز QR…</p>
+            )
           ) : (
-            <p className="animate-pulse text-sm text-muted">جارٍ توليد الكود…</p>
+            bot.pair_code ? (
+              <>
+                <p className="text-sm text-muted">أدخل هذا الكود في جوالك:</p>
+                <p dir="ltr" className="font-mono text-4xl font-bold tracking-[0.35em] text-accent">
+                  {bot.pair_code}
+                </p>
+                <p className="text-sm text-muted">
+                  واتساب ← الأجهزة المرتبطة ← ربط برقم الهاتف
+                </p>
+              </>
+            ) : bot.qr ? (
+              <>
+                {/* fallback QR if pairing code failed */}
+                {/* eslint-disable-next-line @next/next/no-img-element -- data URL وليس ملفاً ثابتاً */}
+                <img src={bot.qr} alt="رمز QR" width={260} height={260} className="rounded-xl bg-white p-3" />
+                <p className="text-sm text-muted">
+                  تعذّر كود الاقتران، يمكنك مسح الرمز: واتساب ← الأجهزة المرتبطة ← ربط جهاز
+                </p>
+              </>
+            ) : (
+              <p className="animate-pulse text-sm text-muted">جارٍ طلب كود الاقتران من واتساب…</p>
+            )
           )}
         </div>
       )}

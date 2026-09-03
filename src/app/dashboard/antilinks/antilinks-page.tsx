@@ -23,7 +23,7 @@ export default function AntiLinksPage() {
   useEffect(() => {
     (async () => {
       const supabase = createClient();
-      const { data } = await supabase.from("bots").select("id,name,linked_number,settings");
+      const { data } = await supabase.from("bots").select("id,name,linked_number,phone,settings");
       const list = data ?? [];
       setBots(list);
       const first = list[0];
@@ -93,7 +93,7 @@ export default function AntiLinksPage() {
         <form onSubmit={(e) => { e.preventDefault(); save(); }} className="card space-y-6 p-6">
           <label className="mb-1.5 block text-sm font-medium">اختر البوت</label>
           <select className="input" value={selected} onChange={(e) => onPick(e.target.value)}>
-            {bots.map((b) => <option key={b.id} value={b.id}>{b.name} — {b.linked_number}</option>)}
+            {bots.map((b) => <option key={b.id} value={b.id}>{b.name} — {b.linked_number || b.phone || "غير متصل"}</option>)}
           </select>
 
           <div className="space-y-3">

@@ -1,0 +1,8 @@
+node_modules
+.next
+.git
+engine.log
+sessions
+*.log
+vps
+.vercel-token

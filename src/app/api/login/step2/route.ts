@@ -29,11 +29,11 @@ export async function POST(req: NextRequest) {
     const meta = usr.user_metadata || {};
     const pending = meta.pending_otp;
     if (!pending || pending.purpose !== "login")
-      return NextResponse.json({ error: "لا يوجد رمز معلّق" }, { status: 400 });
+      return NextResponse.json({ success: false, message: "لا يوجد رمز معلّق، أعد تسجيل الدخول" }, { status: 400 });
     if (new Date(pending.expires).getTime() < Date.now())
-      return NextResponse.json({ error: "انتهت صلاحية الرمز، أعد تسجيل الدخول" }, { status: 400 });
+      return NextResponse.json({ success: false, message: "انتهت صلاحية الرمز (مرت أكثر من 5 دقائق)، اضغط رجوع وأعد تسجيل الدخول" }, { status: 400 });
     if (String(pending.code) !== String(code).trim())
-      return NextResponse.json({ error: "الرمز غير صحيح" }, { status: 400 });
+      return NextResponse.json({ success: false, message: "الرمز غير صحيح، تأكد من الرمز المدخل" }, { status: 400 });
 
     // مسح الرمز المعلّق
     await fetch(`${url}/auth/v1/admin/users/${usr.id}`, {

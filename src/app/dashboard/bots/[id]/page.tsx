@@ -39,6 +39,7 @@ export default async function BotPage({
           pair_code: bot.pair_code,
           qr: bot.qr,
           linked_number: bot.linked_number,
+          phone: bot.phone,
         }}
       />
 
