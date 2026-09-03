@@ -1,10 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
 import { initAuthCreds } from "@whiskeysockets/baileys";
-import { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } from "./env.mjs";
+
+const URL = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "";
+const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY || "";
 
 const supabase =
-  SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY
-    ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+  URL && KEY
+    ? createClient(URL, KEY)
     : null;
 
 function toBufferSafe(v) {

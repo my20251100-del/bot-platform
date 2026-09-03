@@ -10,12 +10,47 @@ import { createClient } from "@supabase/supabase-js";
 import QRCode from "qrcode";
 import pino from "pino";
 import { promisify } from "util";
-import "./env.mjs";
-import { SUPABASE_URL as url, SUPABASE_SERVICE_ROLE_KEY as serviceKey } from "./env.mjs";
-import { createSupabaseAuthStore } from "./auth-store.mjs";
-import { rmSync, readFileSync, writeFileSync } from "fs";
+import { rmSync, readFileSync, writeFileSync, existsSync } from "fs";
 import { execFile } from "child_process";
+import path from "path";
+import { fileURLToPath } from "url";
+import { createSupabaseAuthStore } from "./auth-store.mjs";
 import sharp from "sharp";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// قراءة ملفات البيئة تلقائياً بدون الحاجة لأي ملفات إضافية
+for (const envFile of [
+  path.resolve(process.cwd(), ".env.local"),
+  path.resolve(process.cwd(), ".env"),
+  path.resolve(__dirname, ".env.local"),
+  path.resolve(__dirname, ".env"),
+  path.resolve(__dirname, "..", ".env.local"),
+  path.resolve(__dirname, "..", ".env"),
+]) {
+  try {
+    if (existsSync(envFile)) {
+      const content = readFileSync(envFile, "utf8");
+      for (const rawLine of content.split(/\r?\n/)) {
+        const line = rawLine.trim();
+        if (!line || line.startsWith("#")) continue;
+        const eq = line.indexOf("=");
+        if (eq <= 0) continue;
+        const k = line.slice(0, eq).trim();
+        let v = line.slice(eq + 1).trim();
+        if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
+          v = v.slice(1, -1);
+        }
+        if (process.env[k] === undefined || process.env[k] === "") {
+          process.env[k] = v;
+        }
+      }
+    }
+  } catch {}
+}
+
+const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "";
+const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY || "";
 
 const execFileAsync = promisify(execFile);
 
