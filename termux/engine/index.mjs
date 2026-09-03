@@ -889,8 +889,10 @@ async function startSession(bot, version) {
           console.log(`[WA][${bot.id}] QR/pairing code expired - cleared session for clean retry`);
           sessionFailures.delete(bot.id);
           sessionRetryAt.delete(bot.id);
-          // Remove from invalid sessions so it can be retried
-          invalidSessions.delete(bot.id);
+          
+          // Add to invalid sessions so it DOES NOT automatically retry.
+          // The user must explicitly request a new code from the dashboard (which sets status: "pending").
+          invalidSessions.add(bot.id);
           return;
         }
 
