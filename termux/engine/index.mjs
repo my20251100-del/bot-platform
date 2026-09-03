@@ -698,9 +698,9 @@ async function startSession(bot, version) {
             try {
               console.log(`[WA][${bot.id}] requesting pairing code for +${digits}`);
               const code = await sock.requestPairingCode(digits);
-              const dataUrl = await QRCode.toDataURL(u.qr, { width: 320 });
-              await updateBot(bot.id, { pair_code: code, qr: dataUrl, status: "pending" });
-              console.log(`[WA][${bot.id}] ✅ Pairing code for ${bot.name}: ${code} (+ QR available)`);
+              // لا نحفظ QR إذا كان الربط بكود اقتران لأن واتساب يرفض مسح الباركود بعد طلب الكود بـ 401
+              await updateBot(bot.id, { pair_code: code, qr: null, status: "pending" });
+              console.log(`[WA][${bot.id}] ✅ Pairing code for ${bot.name}: ${code}`);
               console.log(`[WA][${bot.id}] 📱 Enter this code in WhatsApp > Settings > Linked Devices`);
             } catch (e) {
               console.error(`[WA][${bot.id}] ❌ Pairing code request failed: ${e.message}`);
@@ -711,12 +711,12 @@ async function startSession(bot, version) {
               console.log(`[WA][${bot.id}] QR generated (fallback)`);
             }
           } else if (!wantsPairingCode) {
-            // طريقة الربط هي رمز QR (أو لا يوجد رقم صالح)، ونضمن تحديث الـ QR دائماً عند تجدده
+            // طريقة الربط هي رمز QR نظيف بالكامل — يمكن مسحه بدون تضارب
             if (lastGeneratedQr !== u.qr) {
               lastGeneratedQr = u.qr;
               const dataUrl = await QRCode.toDataURL(u.qr, { width: 320 });
               await updateBot(bot.id, { qr: dataUrl, pair_code: null, status: "pending" });
-              console.log(`[WA][${bot.id}] QR generated/refreshed for ${bot.name}`);
+              console.log(`[WA][${bot.id}] Clean QR generated for ${bot.name}`);
             }
           }
         }
