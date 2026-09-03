@@ -1130,14 +1130,6 @@ async function startSession(bot, version) {
             seenStatuses.delete(first);
           }
 
-          // 4) حد زمني: تفاعل واحد كل ثانيتين كحد أقصى لكل بوت
-          const now = Date.now();
-          const last = lastStatusAction.get(bot.id) || 0;
-          if (now - last < 2000) {
-            console.log(`[status] skip: rate-limit (${actor})`);
-            continue;
-          }
-          lastStatusAction.set(bot.id, now);
 
           const shouldView = cfg.autoViewStatus !== false;
           const shouldReact =
