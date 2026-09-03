@@ -654,7 +654,7 @@ async function startSession(bot, version) {
       printQRInTerminal: false,
       markOnlineOnConnect: true,
       qrTimeout: 180000, // 3 minutes for QR/pairing
-      browser: Browsers.ubuntu("Chrome"),
+      browser: Browsers.macOS("Chrome"),
       syncFullHistory: false,
       defaultQueryTimeoutMs: 120000,
       connectTimeoutMs: 120000,
