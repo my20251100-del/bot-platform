@@ -13,6 +13,7 @@ interface SiteHeaderClientProps {
 
 export default function SiteHeaderClient({ user }: SiteHeaderClientProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [botDropdownOpen, setBotDropdownOpen] = useState(false);
 
   return (
     <header className="sticky top-0 z-50 border-b border-border/60 bg-bg/90 backdrop-blur-2xl">
@@ -36,6 +37,81 @@ export default function SiteHeaderClient({ user }: SiteHeaderClientProps) {
           <Link href="/" className="rounded-xl px-3.5 py-1.5 text-sm font-medium text-muted transition hover:bg-surface hover:text-fg">
             الرئيسية
           </Link>
+
+          {/* قائمة البوت المنسدلة مطابقة لـ Red Queen */}
+          <div
+            className="relative"
+            onMouseEnter={() => setBotDropdownOpen(true)}
+            onMouseLeave={() => setBotDropdownOpen(false)}
+          >
+            <div className="flex items-center">
+              <Link
+                href="/bot"
+                className="rounded-s-xl ps-3 pe-1.5 py-1.5 text-sm font-bold text-accent transition hover:bg-surface"
+              >
+                🤖 Bot
+              </Link>
+              <button
+                type="button"
+                onClick={() => setBotDropdownOpen(!botDropdownOpen)}
+                className="rounded-e-xl pe-2.5 ps-0.5 py-1.5 text-accent transition hover:bg-surface"
+                aria-label="قائمة البوت"
+              >
+                <svg
+                  fill="none"
+                  height="11"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  className={`transition-transform duration-200 ${botDropdownOpen ? "rotate-180" : "rotate-0"}`}
+                  viewBox="0 0 24 24"
+                  width="11"
+                >
+                  <path d="M6 9l6 6 6-6" />
+                </svg>
+              </button>
+            </div>
+
+            {botDropdownOpen && (
+              <div className="absolute top-full start-0 z-50 mt-1.5 w-48 rounded-2xl border border-border/80 bg-surface/95 p-1.5 shadow-2xl backdrop-blur-xl animate-in fade-in slide-in-from-top-2">
+                <Link
+                  href="/bot"
+                  className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-white hover:bg-elevated hover:text-accent"
+                >
+                  <span>🤖</span>
+                  <span>The Mini Bot (الرئيسية)</span>
+                </Link>
+                <Link
+                  href="/bot/create"
+                  className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold text-accent hover:bg-accent/15"
+                >
+                  <span>🚀</span>
+                  <span>Deploy Now (ربط الآن)</span>
+                </Link>
+                <Link
+                  href="/bot/setting"
+                  className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-white hover:bg-elevated hover:text-accent"
+                >
+                  <span>⚙️</span>
+                  <span>Settings (الإعدادات)</span>
+                </Link>
+                <Link
+                  href="/bot/autoreply"
+                  className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-white hover:bg-elevated hover:text-accent"
+                >
+                  <span>💬</span>
+                  <span>Auto Reply (الرد الآلي)</span>
+                </Link>
+                <Link
+                  href="/bot/contact"
+                  className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-white hover:bg-elevated hover:text-accent"
+                >
+                  <span>📇</span>
+                  <span>Auto Save (حفظ الأرقام)</span>
+                </Link>
+              </div>
+            )}
+          </div>
+
           <Link href="/connect" className="rounded-xl px-3.5 py-1.5 text-sm font-semibold text-accent transition hover:bg-accent/15">
             ⚡ ربط سريع
           </Link>
@@ -121,12 +197,48 @@ export default function SiteHeaderClient({ user }: SiteHeaderClientProps) {
             </Link>
 
             <Link
-              href="/connect"
+              href="/bot"
               onClick={() => setMobileMenuOpen(false)}
               className="flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-bold text-accent bg-accent/10 hover:bg-accent/20"
             >
-              <span>⚡</span>
-              <span>ربط سريع بالواتساب</span>
+              <span>🤖</span>
+              <span>The Mini Bot (منصة البوت)</span>
+            </Link>
+
+            <Link
+              href="/bot/create"
+              onClick={() => setMobileMenuOpen(false)}
+              className="flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-fg hover:bg-surface"
+            >
+              <span>🚀</span>
+              <span>Deploy Now (ربط رقم جديد)</span>
+            </Link>
+
+            <Link
+              href="/bot/setting"
+              onClick={() => setMobileMenuOpen(false)}
+              className="flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-fg hover:bg-surface"
+            >
+              <span>⚙️</span>
+              <span>Bot Settings (الإعدادات)</span>
+            </Link>
+
+            <Link
+              href="/bot/autoreply"
+              onClick={() => setMobileMenuOpen(false)}
+              className="flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-fg hover:bg-surface"
+            >
+              <span>💬</span>
+              <span>Auto Reply (الرد التلقائي)</span>
+            </Link>
+
+            <Link
+              href="/bot/contact"
+              onClick={() => setMobileMenuOpen(false)}
+              className="flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-fg hover:bg-surface"
+            >
+              <span>📇</span>
+              <span>Auto Save (حفظ الأرقام)</span>
             </Link>
 
             <Link
