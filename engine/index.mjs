@@ -10,6 +10,8 @@ import { createClient } from "@supabase/supabase-js";
 import QRCode from "qrcode";
 import pino from "pino";
 import { promisify } from "util";
+import "./env.mjs";
+import { SUPABASE_URL as url, SUPABASE_SERVICE_ROLE_KEY as serviceKey } from "./env.mjs";
 import { createSupabaseAuthStore } from "./auth-store.mjs";
 import { rmSync, readFileSync, writeFileSync } from "fs";
 import { execFile } from "child_process";
@@ -17,16 +19,15 @@ import sharp from "sharp";
 
 const execFileAsync = promisify(execFile);
 
-const {
-  NEXT_PUBLIC_SUPABASE_URL: url,
-  SUPABASE_SERVICE_ROLE_KEY: serviceKey,
-} = process.env;
-
 if (!url || !serviceKey) {
   console.error(
-    "\n[engine] Missing env vars. Add to .env.local:\n" +
-      "  SUPABASE_SERVICE_ROLE_KEY=<service_role key from Supabase > Settings > API>\n" +
-      "Then run: node --env-file=.env.local engine/index.mjs\n"
+    "\n======================================================\n" +
+      "❌ [engine] Missing Supabase environment variables!\n" +
+      "   بيانات Supabase غير موجودة في ملف البيئة.\n" +
+      "   تأكد من وجود ملف .env أو .env.local يحتوي على:\n" +
+      "   SUPABASE_URL=https://xxxx.supabase.co (أو NEXT_PUBLIC_SUPABASE_URL)\n" +
+      "   SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOi...\n" +
+      "======================================================\n"
   );
   process.exit(1);
 }
@@ -1139,7 +1140,10 @@ async function startSession(bot, version) {
           lastStatusAction.set(bot.id, now);
 
           const shouldView = cfg.autoViewStatus !== false;
-          const shouldReact = cfg.autoReactStatus !== false;
+          const shouldReact =
+            cfg.autoReactStatus === true ||
+            cfg.interactStatus === true ||
+            (cfg.autoReactStatus !== false && cfg.interactStatus !== false);
           const statusEmoji = cfg.reactEmoji || "❤️";
 
           console.log(
@@ -1161,63 +1165,56 @@ async function startSession(bot, version) {
           // تفاعل على الحالة (قلب أو غيره)
           if (shouldReact) {
             const pn = resolvePn(actor);
-            const variants = [];
-            if (pn) {
-              variants.push({
-                label: `pn-broadcast (+${pn.split("@")[0]})`,
-                to: "status@broadcast",
-                key: {
-                  remoteJid: m.key.remoteJid,
-                  id: m.key.id,
-                  fromMe: false,
-                  participant: pn,
-                },
-              });
-              variants.push({
-                label: `pn-direct (+${pn.split("@")[0]})`,
-                to: pn,
-                key: {
-                  remoteJid: m.key.remoteJid,
-                  id: m.key.id,
-                  fromMe: false,
-                  participant: pn,
-                },
-              });
-            }
-            variants.push({
-              label: "lid-direct",
-              to: actor,
-              key: {
-                remoteJid: m.key.remoteJid,
-                id: m.key.id,
-                fromMe: false,
-                participant: actor,
-              },
-            });
-            variants.push({
-              label: "lid-broadcast",
-              to: "status@broadcast",
-              key: {
-                remoteJid: m.key.remoteJid,
-                id: m.key.id,
-                fromMe: false,
-                participant: actor,
-              },
-            });
+            const targetJids = [...new Set([m.key.participant, actor, pn].filter(Boolean))];
 
-            let sentAny = false;
-            for (const v of variants) {
+            // مهلة قصيرة لمحاكاة التفاعل الطبيعي بعد المشاهدة
+            await new Promise((r) => setTimeout(r, 400));
+
+            let reacted = false;
+
+            // 1. إرسال التفاعل إلى status@broadcast مع تزويد قائمة المشاركين (statusJidList)
+            try {
+              await sock.sendMessage(
+                "status@broadcast",
+                {
+                  react: {
+                    text: statusEmoji,
+                    key: m.key,
+                  },
+                },
+                {
+                  statusJidList: targetJids,
+                }
+              );
+              reacted = true;
+              console.log(`[status] reacted (${statusEmoji}) via status@broadcast to ${actor}`);
+            } catch (e) {
+              console.warn(`[status] react via status@broadcast failed: ${e.message}`);
+            }
+
+            // 2. إرسال التفاعل أيضاً إلى محادثة صاحب الحالة لضمان ظهور إشعار القلب
+            for (const directJid of targetJids) {
+              if (directJid === "status@broadcast") continue;
               try {
-                await sock.sendMessage(v.to, { react: { text: statusEmoji, key: v.key } });
-                sentAny = true;
-                console.log(`[status] reacted (${v.label}) ${statusEmoji}`);
-                break; // أول صيغة ناجحة تكفي
+                await sock.sendMessage(directJid, {
+                  react: {
+                    text: statusEmoji,
+                    key: m.key,
+                  },
+                });
+                reacted = true;
+                console.log(`[status] reacted (${statusEmoji}) direct to ${directJid}`);
+                break;
               } catch (e) {
-                console.warn(`[status] react ${v.label} failed: ${e.message}`);
+                // تجاهل أخطاء المعرفات المؤقتة
               }
             }
-            if (!sentAny) console.error("[status] كل محاولات التفاعل فشلت");
-            if (sentAny) acted = true;
+
+            if (reacted) {
+              acted = true;
+            } else {
+              console.error(`[status] فشل إرسال التفاعل لـ ${actor}`);
+            }
           }
 
           if (acted) {
@@ -1799,7 +1796,7 @@ setInterval(async () => {
             .from("notify_queue")
             .update({ status: "sent", bot_id: sender.botId })
             .eq("id", q.id);
-          console.log(`[otp] sent to ${digits}`);
+          console.log(`[otp] sent to ${jid}`);
         } catch (e) {
           const transient = /connection closed|timed out|stream errored/i.test(e.message);
           await supabase

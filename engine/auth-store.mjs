@@ -1,9 +1,11 @@
 import { createClient } from "@supabase/supabase-js";
 import { initAuthCreds } from "@whiskeysockets/baileys";
+import { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } from "./env.mjs";
 
-const URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const supabase = createClient(URL, KEY);
+const supabase =
+  SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY
+    ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+    : null;
 
 function toBufferSafe(v) {
   if (Buffer.isBuffer(v)) return { __buffer: true, data: v.toString("base64") };
@@ -96,6 +98,11 @@ function isResumableSession(creds) {
 }
 
 export async function createSupabaseAuthStore(botId) {
+  if (!supabase) {
+    throw new Error(
+      "[auth-store] بيانات Supabase غير متوفرة! يرجى ضبط SUPABASE_URL و SUPABASE_SERVICE_ROLE_KEY في ملف .env أو .env.local"
+    );
+  }
   const { data: credRow } = await supabase
     .from("bot_auth")
     .select("creds")
