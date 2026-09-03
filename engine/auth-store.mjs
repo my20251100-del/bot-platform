@@ -89,10 +89,10 @@ function isResumableSession(creds) {
     return !!creds.me?.id && hasValidCreds(creds);
   }
 
-  // إذا كانت تحتوي على me لكن registered غير مكتمل، فهذه محاولة اقتران سابقة غير مكتملة
-  // خوادم واتساب ترفض استئنافها وتطلق 401 loggedOut، لذلك يجب ضبطها من الصفر
-  if (creds.me?.id) {
-    return false;
+  // إذا كانت المفاتيح الأساسية متوفرة بالكامل (أثناء الاقتران أو التجهيز)
+  // لا نحذفها لأنها تحتوي على pairingEphemeralKeyPair المطلوب لفك تشفير كود الاقتران
+  if (hasValidCreds(creds)) {
+    return true;
   }
 
   // جلسة نظيفة قبل الاقتران تحتوي على المفاتيح الأساسية
