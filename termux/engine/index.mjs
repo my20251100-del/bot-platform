@@ -849,6 +849,7 @@ async function startSession(bot, version) {
         // 428 = pairing code expired - the saved credentials are in a partial state
         // that cannot be resumed. Clear them and start fresh with new pairing.
         if (code === 428) {
+          await stopSession(bot.id);
           await supabase.from("bot_auth").delete().eq("bot_id", bot.id);
           await supabase.from("bot_keys").delete().eq("bot_id", bot.id);
           await updateBot(bot.id, {
@@ -1552,6 +1553,9 @@ async function startSession(bot, version) {
 }
 
 async function stopSession(botId, unlink = false) {
+  sessionFailures.delete(botId);
+  sessionRetryAt.delete(botId);
+  invalidSessions.delete(botId);
   const entry = sessions.get(botId);
   if (!entry) {
     if (unlink) await updateBot(botId, { command: "stop", status: "disconnected", linked_number: null, qr: null });
@@ -1564,7 +1568,7 @@ async function stopSession(botId, unlink = false) {
       await updateBot(botId, { command: "stop", status: "disconnected", linked_number: null, qr: null });
     } else {
       entry.sock.end(undefined);
-      await updateBot(botId, { status: "disconnected", linked_number: null, qr: null });
+      await updateBot(botId, { status: "disconnected", qr: null });
     }
   } catch {
     /* already closed */
@@ -1594,7 +1598,8 @@ setInterval(async () => {
   try {
     const { data: bots, error } = await supabase
       .from("bots")
-      .select("*");
+      .select("*")
+      .order("updated_at", { ascending: false });
     if (error) {
       console.error("[poll]", error.message);
       return;
@@ -1638,13 +1643,18 @@ setInterval(async () => {
         const digits = rawPhone.replace(/\D/g, "");
         if (digits && activeStartPhones.has(digits)) {
           console.warn(`[poll] Duplicate bot for phone +${digits} (${bot.id}) skipped to prevent WhatsApp pairing conflict`);
+          if (bot.status !== "connected") {
+            await updateBot(bot.id, { command: "stop", status: "disconnected", pair_code: null, qr: null });
+          }
           continue;
         }
         if (digits) activeStartPhones.add(digits);
 
-        // إذا كان البوت بحالة pending (طلب ربط جديد)، فك حظره من invalidSessions
+        // إذا كان البوت بحالة pending (طلب ربط جديد)، فك حظره من invalidSessions و sessionFailures
         if (bot.status === "pending") {
           invalidSessions.delete(bot.id);
+          sessionFailures.delete(bot.id);
+          sessionRetryAt.delete(bot.id);
         }
         const lastRetry = sessionRetryAt.get(bot.id) || 0;
         const now = Date.now();

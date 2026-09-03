@@ -21,12 +21,24 @@ export default async function BotPage({
 
   if (!bot) notFound();
 
+  const isLinked = !!bot.linked_number;
+
   return (
     <div className="mx-auto max-w-3xl">
       <div className="mb-8">
         <h1 className="text-2xl font-bold">{bot.name}</h1>
-        {bot.phone && (
-          <p dir="ltr" className="mt-1 text-right text-sm text-muted">{bot.phone}</p>
+        {isLinked ? (
+          <p className="mt-1 flex items-center gap-2 text-sm text-emerald-400">
+            <span className="h-2 w-2 rounded-full bg-emerald-400" />
+            <span dir="ltr">+{bot.linked_number}</span>
+            <span className="text-xs text-muted">(الرقم المتصل)</span>
+          </p>
+        ) : (
+          <p className="mt-1 flex items-center gap-2 text-sm text-muted">
+            <span className="h-2 w-2 rounded-full bg-amber-400/80" />
+            <span>غير مربوط بحساب واتساب بعد</span>
+            {bot.phone && <span dir="ltr" className="text-xs text-muted/70">({bot.phone})</span>}
+          </p>
         )}
       </div>
 
@@ -42,6 +54,18 @@ export default async function BotPage({
           phone: bot.phone,
         }}
       />
+
+      {!isLinked && (
+        <div className="mb-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200 flex items-start gap-3">
+          <span className="text-xl">💡</span>
+          <div>
+            <p className="font-bold">تنبيه: البوت غير مربوط بواتساب حتى الآن</p>
+            <p className="mt-0.5 text-xs text-amber-200/80">
+              خيارات الأتمتة أدناه جاهزة للإعداد مسبقاً، وستبدأ بالعمل التلقائي فور ربط البوت في الأعلى بنجاح.
+            </p>
+          </div>
+        </div>
+      )}
 
       <BotSettings
         botId={bot.id}

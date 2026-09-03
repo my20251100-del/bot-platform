@@ -52,22 +52,47 @@ export default function CreateBotForm({ hasBot = false }: { hasBot?: boolean }) 
       return setError("يرجى إدخال رقم واتساب صالح مع رمز الدولة (مثال: +96777xxxxxxx) لطلب كود الاقتران");
     }
 
-    const { error: insErr } = await supabase.from("bots").insert({
-      user_id: user.id,
-      name,
-      phone: cleanPhone,
-      link_method: linkMethod,
-      status: "pending",
-      pair_code: null,
-      qr: null,
-      command: "start",
-    });
+    const { data: newBot, error: insErr } = await supabase
+      .from("bots")
+      .insert({
+        user_id: user.id,
+        name,
+        phone: cleanPhone,
+        link_method: linkMethod,
+        status: "pending",
+        pair_code: null,
+        qr: null,
+        command: "start",
+      })
+      .select("id")
+      .single();
+
+    if (insErr || !newBot) {
+      setLoading(false);
+      return setError(insErr?.message || "تعذّر إنشاء البوت");
+    }
+
+    // تنظيف أي تضارب مع أرقام قديمة وبدء المحرك
+    try {
+      await fetch("/api/bot/action", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          botId: newBot.id,
+          action: "start",
+          phone: cleanPhone,
+          linkMethod,
+        }),
+      });
+    } catch {
+      // غير حرج
+    }
 
     setLoading(false);
-    if (insErr) return setError(insErr.message);
     setOpen(false);
     setName("");
     setPhone("");
+    router.push(`/dashboard/bots/${newBot.id}`);
     router.refresh();
   }
 
