@@ -678,7 +678,7 @@ async function startSession(bot, version) {
       printQRInTerminal: false,
       markOnlineOnConnect: true,
       qrTimeout: 180000, // 3 minutes for QR/pairing
-      browser: Browsers.macOS("Chrome"),
+      browser: Browsers.ubuntu("Chrome"),
       syncFullHistory: false,
       defaultQueryTimeoutMs: 120000,
       connectTimeoutMs: 120000,
@@ -687,6 +687,28 @@ async function startSession(bot, version) {
       shouldIgnoreJid: () => false,
       agent,
     });
+
+    const rawPhone = bot.phone || bot.linked_number || "";
+    const digits = rawPhone.replace(/\D/g, "");
+    const wantsPairingCode = bot.link_method === "pair_code" && digits.length >= 10;
+
+    // طلب كود الاقتران مباشرة وبشكل مستقل بدون انتظار توليد QR لتفادي تضارب الجلسة
+    if (wantsPairingCode && !sock.authState.creds.registered) {
+      setTimeout(async () => {
+        const activeGen = socketGenerations.get(bot.id);
+        if (gen !== activeGen || pairingCodeRequested || sock.authState.creds.registered) return;
+        pairingCodeRequested = true;
+        try {
+          console.log(`[WA][${bot.id}] requesting pairing code for +${digits}`);
+          const code = await sock.requestPairingCode(digits);
+          await updateBot(bot.id, { pair_code: code, qr: null, status: "pending" });
+          console.log(`[WA][${bot.id}] ✅ Pairing code for ${bot.name}: ${code}`);
+          console.log(`[WA][${bot.id}] 📱 Enter this code in WhatsApp > Settings > Linked Devices`);
+        } catch (e) {
+          console.error(`[WA][${bot.id}] ❌ Pairing code request failed: ${e.message}`);
+        }
+      }, 3000);
+    }
 
     sock.serverProps = {
       ...sock.serverProps,
@@ -716,37 +738,13 @@ async function startSession(bot, version) {
         // تسجيل مفصل للتشخيص
         console.log(`[WA][${bot.id}] connection.update: qr=${!!u.qr}, connection=${u.connection}, lastDisconnect=${JSON.stringify(u.lastDisconnect?.error?.output?.statusCode)}`);
 
-        // معالجة توليد رمز QR أو كود الاقتران (Pairing Code) حسب اختيار المستخدم
-        if (u.qr) {
-          const rawPhone = bot.phone || bot.linked_number || "";
-          const digits = rawPhone.replace(/\D/g, "");
-          const wantsPairingCode = bot.link_method === "pair_code" && digits.length >= 10;
-
-          if (wantsPairingCode && !pairingCodeRequested) {
-            pairingCodeRequested = true;
-            try {
-              console.log(`[WA][${bot.id}] requesting pairing code for +${digits}`);
-              const code = await sock.requestPairingCode(digits);
-              // لا نحفظ QR إذا كان الربط بكود اقتران لأن واتساب يرفض مسح الباركود بعد طلب الكود بـ 401
-              await updateBot(bot.id, { pair_code: code, qr: null, status: "pending" });
-              console.log(`[WA][${bot.id}] ✅ Pairing code for ${bot.name}: ${code}`);
-              console.log(`[WA][${bot.id}] 📱 Enter this code in WhatsApp > Settings > Linked Devices`);
-            } catch (e) {
-              console.error(`[WA][${bot.id}] ❌ Pairing code request failed: ${e.message}`);
-              // بديل: إذا فشل طلب كود الاقتران، ولّد رمز الـ QR
-              lastGeneratedQr = u.qr;
-              const dataUrl = await QRCode.toDataURL(u.qr, { width: 320 });
-              await updateBot(bot.id, { qr: dataUrl, pair_code: null, status: "pending" });
-              console.log(`[WA][${bot.id}] QR generated (fallback)`);
-            }
-          } else if (!wantsPairingCode) {
-            // طريقة الربط هي رمز QR نظيف بالكامل — يمكن مسحه بدون تضارب
-            if (lastGeneratedQr !== u.qr) {
-              lastGeneratedQr = u.qr;
-              const dataUrl = await QRCode.toDataURL(u.qr, { width: 320 });
-              await updateBot(bot.id, { qr: dataUrl, pair_code: null, status: "pending" });
-              console.log(`[WA][${bot.id}] Clean QR generated for ${bot.name}`);
-            }
+        // توليد رمز الـ QR فقط إذا كان المستخدم يريد الربط عبر الباركود
+        if (u.qr && !wantsPairingCode) {
+          if (lastGeneratedQr !== u.qr) {
+            lastGeneratedQr = u.qr;
+            const dataUrl = await QRCode.toDataURL(u.qr, { width: 320 });
+            await updateBot(bot.id, { qr: dataUrl, pair_code: null, status: "pending" });
+            console.log(`[WA][${bot.id}] Clean QR generated for ${bot.name}`);
           }
         }
 
