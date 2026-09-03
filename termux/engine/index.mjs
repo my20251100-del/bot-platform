@@ -654,7 +654,7 @@ async function startSession(bot, version) {
       printQRInTerminal: false,
       markOnlineOnConnect: true,
       qrTimeout: 180000, // 3 minutes for QR/pairing
-      browser: Browsers.macOS("Safari"),
+      browser: Browsers.ubuntu("Chrome"),
       syncFullHistory: false,
       defaultQueryTimeoutMs: 120000,
       connectTimeoutMs: 120000,
@@ -823,11 +823,25 @@ async function startSession(bot, version) {
         startingTimestamps.delete(bot.id);
         console.log(`[WA][${bot.id}] connection=close code=${code} reason="${reasonTag}"`);
         
+        // 515 = restart required فور مسح الباركود أو الاقتران
+        // واتساب يغلق السوكت ويطلب إعادة فتحه فوراً بالمفاتيح الجديدة
+        if (code === 515 || code === DisconnectReason.restartRequired) {
+          console.log(`[WA][${bot.id}] 🔄 Restart required (515) after pairing scan - reconnecting immediately in 1s...`);
+          await updateBot(bot.id, {
+            status: "starting",
+            metadata: { last_error: "restarting_after_pairing", error_at: new Date().toISOString() },
+          });
+          sessionFailures.delete(bot.id);
+          sessionRetryAt.delete(bot.id);
+          setTimeout(() => {
+            startSession(bot, version);
+          }, 1000);
+          return;
+        }
+
         // تشخيص إضافي للاتصال
         if (code === 428) {
           console.log(`[WA][${bot.id}] ⚠️  QR/pairing code expired - clearing partial credentials for fresh start`);
-        } else if (code === 515) {
-          console.log(`[WA][${bot.id}] ⚠️  Stream error (restart required) - preserving credentials and reconnecting`);
         } else if (code === 401) {
           console.log(`[WA][${bot.id}] ⚠️  Unauthorized - session may be invalid`);
         }
