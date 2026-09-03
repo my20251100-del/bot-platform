@@ -1,0 +1,16 @@
+{
+  "name": "bot-engine",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node engine/index.mjs",
+    "dev": "node --env-file=.env.local engine/index.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.112.4",
+    "@whiskeysockets/baileys": "^6.7.24",
+    "pino": "^10.3.1",
+    "qrcode": "^1.5.4"
+  }
+}
