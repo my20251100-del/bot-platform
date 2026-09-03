@@ -9,40 +9,90 @@ import { useToast } from "@/components/ui/toast";
 export default function LoginClient() {
   const router = useRouter();
   const { toast } = useToast();
-  const [step, setStep] = useState<"form" | "otp">("form");
+  const [step, setStep] = useState<"form" | "otp" | "forgot_request" | "forgot_confirm">("form");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [resetCode, setResetCode] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [otp, setOtp] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [shake, setShake] = useState(false);
   const [devOtp, setDevOtp] = useState<string | null>(null);
+  const [devResetOtp, setDevResetOtp] = useState<string | null>(null);
 
-  async function handleForgot() {
+  async function handleForgotRequest(e: React.FormEvent) {
+    e.preventDefault();
     if (!email.trim()) {
-      toast("اكتب بريدك أولاً ثم اضغط نسيت كلمة السر");
+      setError("يرجى كتابة بريدك الإلكتروني");
       return;
     }
+    setError(null);
     setLoading(true);
     try {
-      await fetch("/api/login/step1", {
+      const res = await fetch("/api/auth/reset-password/request", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password: "reset-check" }),
+        body: JSON.stringify({ email: email.trim() }),
       });
-    } catch {}
-    setLoading(false);
-    const { createClient } = await import("@/lib/supabase/client");
-    const supabase = createClient();
-    const { error: rErr } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-      redirectTo: window.location.origin + "/auth/callback?next=%2Fdashboard",
-    });
-    if (rErr) {
-      setError("تعذّر إرسال الرابط، تأكد من البريد وحاول مجدداً");
+      const data = await res.json();
+      if (!data?.success) {
+        setError(data?.message || "تعذر إرسال رمز الاستعادة");
+        setShake(true);
+        setTimeout(() => setShake(false), 450);
+        return;
+      }
+      setStep("forgot_confirm");
+      if (data?.dev_otp) {
+        setDevResetOtp(data.dev_otp);
+        setResetCode(data.dev_otp);
+      }
+      toast(data?.message || "أرسلنا لك رمز التحقق 👈 أدخله هنا");
+    } catch {
+      setError("حدث خطأ في الاتصال، حاول مجدداً");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleForgotConfirm(e: React.FormEvent) {
+    e.preventDefault();
+    if (!resetCode.trim() || !newPassword.trim()) {
+      setError("يرجى إدخال رمز التحقق وكلمة المرور الجديدة");
       return;
     }
-    toast("أرسلنا لك رابط استعادة كلمة السر 👈 تحقق من بريدك");
+    if (newPassword.trim().length < 6) {
+      setError("يجب أن تتكون كلمة المرور من 6 خانات على الأقل");
+      return;
+    }
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await fetch("/api/auth/reset-password/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: email.trim(),
+          code: resetCode.trim(),
+          newPassword: newPassword.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!data?.success) {
+        setError(data?.message || "تعذر إعادة تعيين كلمة المرور");
+        setShake(true);
+        setTimeout(() => setShake(false), 450);
+        return;
+      }
+      toast("تم تعيين كلمة المرور بنجاح! مرحباً بك 👋");
+      router.push("/dashboard");
+      router.refresh();
+    } catch {
+      setError("حدث خطأ، حاول مجدداً");
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function handleOAuth(provider: "google" | "github") {
@@ -163,7 +213,7 @@ export default function LoginClient() {
                 </div>
               )}
               <div>
-                <label className="mb-1.5 block text-sm font-medium text-muted">رمز التحقق (وصل إلى بريدك الإلكتروني)</label>
+                <label className="mb-1.5 block text-sm font-medium text-muted">رمز التحقق (وصل إلى بريدك أو واتسابك)</label>
                 <input
                   dir="ltr"
                   inputMode="numeric"
@@ -188,6 +238,100 @@ export default function LoginClient() {
                 className="w-full text-center text-sm text-muted hover:text-white"
               >
                 ← العودة لتسجيل الدخول
+              </button>
+            </form>
+          ) : step === "forgot_request" ? (
+            <form onSubmit={handleForgotRequest} className="space-y-4">
+              <div className="mb-2">
+                <h2 className="text-lg font-bold text-fg">استعادة كلمة المرور</h2>
+                <p className="text-xs text-muted mt-1">أدخل بريدك الإلكتروني لإرسال رمز التحقق وتعيين كلمة سر جديدة فوراً.</p>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-muted">البريد الإلكتروني</label>
+                <input
+                  type="email"
+                  dir="ltr"
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  autoComplete="username"
+                  className={inputCls}
+                />
+              </div>
+              {error && <p className="rounded-lg border border-blood/40 bg-blood/10 px-3 py-2 text-sm text-red-300" style={{ animation: "fade-in 0.3s ease" }}>{error}</p>}
+              <button
+                type="submit"
+                disabled={loading}
+                className="btn-primary flex w-full items-center justify-center gap-2"
+              >
+                {loading ? "جارٍ الإرسال..." : "إرسال رمز التحقق 🚀"}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setStep("form"); setError(null); }}
+                className="w-full text-center text-sm text-muted hover:text-white"
+              >
+                ← العودة لتسجيل الدخول
+              </button>
+            </form>
+          ) : step === "forgot_confirm" ? (
+            <form onSubmit={handleForgotConfirm} className="space-y-4">
+              <div className="mb-2">
+                <h2 className="text-lg font-bold text-fg">تعيين كلمة المرور الجديدة</h2>
+                <p className="text-xs text-muted mt-1">أدخل رمز التحقق الذي وصلك، ثم اكتب كلمة سرك الجديدة.</p>
+              </div>
+              {devResetOtp && (
+                <div className="rounded-xl border border-accent/40 bg-accent/10 p-3.5 text-center">
+                  <p className="text-xs text-muted mb-1">💡 رمز التحقق السريع (وضع التجربة):</p>
+                  <button
+                    type="button"
+                    onClick={() => setResetCode(devResetOtp)}
+                    className="font-mono text-2xl font-bold tracking-[0.3em] text-accent hover:underline"
+                  >
+                    {devResetOtp}
+                  </button>
+                  <p className="text-[11px] text-accent/80 mt-1">تمت تعبئته تلقائياً في الخانة أدناه 🚀</p>
+                </div>
+              )}
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-muted">رمز التحقق (6 أرقام)</label>
+                <input
+                  dir="ltr"
+                  inputMode="numeric"
+                  placeholder="000000"
+                  value={resetCode}
+                  onChange={(e) => setResetCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  required
+                  className={`${inputCls} text-center text-2xl tracking-[0.5em]`}
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-muted">كلمة المرور الجديدة</label>
+                <input
+                  type="password"
+                  dir="ltr"
+                  placeholder="•••••••• (6 خانات على الأقل)"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  required
+                  className={inputCls}
+                />
+              </div>
+              {error && <p className="rounded-lg border border-blood/40 bg-blood/10 px-3 py-2 text-sm text-red-300" style={{ animation: "fade-in 0.3s ease" }}>{error}</p>}
+              <button
+                type="submit"
+                disabled={loading}
+                className="btn-primary flex w-full items-center justify-center gap-2"
+              >
+                {loading ? "جارٍ الحفظ..." : "حفظ كلمة المرور والدخول 🚀"}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setStep("forgot_request"); setError(null); }}
+                className="w-full text-center text-sm text-muted hover:text-white"
+              >
+                ← إعادة طلب رمز جديد
               </button>
             </form>
           ) : (
@@ -243,9 +387,8 @@ export default function LoginClient() {
               <div className="text-end">
                 <button
                   type="button"
-                  onClick={handleForgot}
-                  disabled={loading}
-                  className="text-sm font-medium text-accent hover:underline disabled:opacity-50"
+                  onClick={() => { setError(null); setStep("forgot_request"); }}
+                  className="text-sm font-medium text-accent hover:underline"
                 >
                   نسيت كلمة السر؟
                 </button>
