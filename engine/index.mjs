@@ -855,7 +855,7 @@ async function startSession(bot, version) {
         if (code === 515 || code === DisconnectReason.restartRequired) {
           console.log(`[WA][${bot.id}] 🔄 Restart required (515) after pairing scan - reconnecting immediately in 1s...`);
           await updateBot(bot.id, {
-            status: "starting",
+            status: "pending",
             metadata: { last_error: "restarting_after_pairing", error_at: new Date().toISOString() },
           });
           sessionFailures.delete(bot.id);
@@ -966,7 +966,7 @@ async function startSession(bot, version) {
         // حد واقٍ من الحلقات: بعد N من الفشل المتتالي أوقف المحاولات مؤقتاً
         if (fails >= MAX_CONSECUTIVE_FAILURES) {
           await updateBot(bot.id, {
-            status: "failed",
+            status: "disconnected",
             command: "stop",
             metadata: {
               last_error: `تعذّر الاتصال (code ${code}: ${reasonTag})`,
