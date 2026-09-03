@@ -131,6 +131,7 @@ export async function POST(req: NextRequest) {
           pair_code: null,
           qr: null,
           command: "start",
+          metadata: { request_restart: Date.now() },
         })
         .select("id, name, status, command, link_method, pair_code, qr, linked_number, settings, phone")
         .single();
@@ -163,7 +164,7 @@ export async function POST(req: NextRequest) {
           status: "pending",
           phone: digits,
           link_method: "pair_code",
-          metadata: { last_error: null, error_at: null, attempt: 0 },
+          metadata: { last_error: null, error_at: null, attempt: 0, request_restart: Date.now() },
         })
         .eq("id", bot.id);
       if (upErr) return NextResponse.json({ error: upErr.message }, { status: 500 });
