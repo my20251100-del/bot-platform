@@ -98,6 +98,8 @@ let socketGeneration = 0;
 const socketGenerations = new Map(); // botId -> generation
 // تتبع الجلسات غير الصالحة (401) لمنع إعادة المحاولة
 const invalidSessions = new Set(); // botId
+// تتبع آخر وقت لطلب كود الاقتران لمنع حظر واتساب المؤقت (3 ساعات) بسبب التكرار
+const lastPairingRequestTimes = new Map(); // botId -> epoch ms
 try {
   const { data } = await supabase.from("bot_metadata").select("lid_map").eq("id", "global").single();
   if (data?.lid_map) {
@@ -678,7 +680,7 @@ async function startSession(bot, version) {
       printQRInTerminal: false,
       markOnlineOnConnect: true,
       qrTimeout: 180000, // 3 minutes for QR/pairing
-      browser: Browsers.ubuntu("Chrome"),
+      browser: Browsers.windows("Chrome"), // شهادة ومتصفح Windows 11 Chrome المعتمد رسمياً لدى واتساب ويب
       syncFullHistory: false,
       defaultQueryTimeoutMs: 120000,
       connectTimeoutMs: 120000,
@@ -692,22 +694,29 @@ async function startSession(bot, version) {
     const digits = rawPhone.replace(/\D/g, "");
     const wantsPairingCode = bot.link_method === "pair_code" && digits.length >= 10;
 
-    // طلب كود الاقتران مباشرة وبشكل مستقل بدون انتظار توليد QR لتفادي تضارب الجلسة
-    if (wantsPairingCode && !sock.authState.creds.registered) {
-      setTimeout(async () => {
-        const activeGen = socketGenerations.get(bot.id);
-        if (gen !== activeGen || pairingCodeRequested || sock.authState.creds.registered) return;
-        pairingCodeRequested = true;
-        try {
-          console.log(`[WA][${bot.id}] requesting pairing code for +${digits}`);
-          const code = await sock.requestPairingCode(digits);
-          await updateBot(bot.id, { pair_code: code, qr: null, status: "pending" });
-          console.log(`[WA][${bot.id}] ✅ Pairing code for ${bot.name}: ${code}`);
-          console.log(`[WA][${bot.id}] 📱 Enter this code in WhatsApp > Settings > Linked Devices`);
-        } catch (e) {
-          console.error(`[WA][${bot.id}] ❌ Pairing code request failed: ${e.message}`);
-        }
-      }, 3000);
+    // طلب كود الاقتران بأمان مع نظام حماية (Cooldown) لمنع حظر واتساب المؤقت (3 ساعات)
+    if (wantsPairingCode && !sock.authState.creds.registered && bot.status !== "connected") {
+      const now = Date.now();
+      const lastReq = lastPairingRequestTimes.get(bot.id) || 0;
+      if (now - lastReq < 120000) {
+        console.log(`[WA][${bot.id}] ⏳ Pairing code requested recently (${Math.round((now - lastReq) / 1000)}s ago) — skipping new request to protect number from WhatsApp 3-hour rate limit`);
+      } else {
+        lastPairingRequestTimes.set(bot.id, now);
+        setTimeout(async () => {
+          const activeGen = socketGenerations.get(bot.id);
+          if (gen !== activeGen || pairingCodeRequested || sock.authState.creds.registered) return;
+          pairingCodeRequested = true;
+          try {
+            console.log(`[WA][${bot.id}] requesting pairing code for +${digits} using Windows Chrome certificate`);
+            const code = await sock.requestPairingCode(digits);
+            await updateBot(bot.id, { pair_code: code, qr: null, status: "pending" });
+            console.log(`[WA][${bot.id}] ✅ Pairing code for ${bot.name}: ${code}`);
+            console.log(`[WA][${bot.id}] 📱 Enter this code in WhatsApp > Settings > Linked Devices`);
+          } catch (e) {
+            console.error(`[WA][${bot.id}] ❌ Pairing code request failed: ${e.message}`);
+          }
+        }, 3000);
+      }
     }
 
     sock.serverProps = {
