@@ -137,23 +137,52 @@ export default function BotDetailView({ bot, isLinked }: Props) {
         />
       )}
 
-      {/* التبويب 5: السجل والنشاط */}
+      {/* التبويب 5: جهات الاتصال وسجل العمليات */}
       {activeTab === "logs" && (
-        <div className="card p-6 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-bold text-fg">سجل عمليات وأنشطة البوت</h3>
-            <a
-              href={`/dashboard/bots/${bot.id}/logs`}
-              className="btn-primary !py-1.5 !px-3 text-xs"
-            >
-              عرض السجل الكامل التفصيلي ↗
-            </a>
-          </div>
-          <p className="text-sm text-muted">
-            يتم تسجيل كافة أحداث الاتصال، الردود الذكية، الرسائل المحذوفة المسترجعة، وتفاعلات الحالات أولاً بأول.
-          </p>
-          <div className="rounded-xl border border-border/60 bg-surface/50 p-4 text-center py-8">
-            <p className="text-sm text-muted">سجل النشاط يعمل لحظياً مع محرك البوت السحابي.</p>
+        <div className="space-y-6">
+          <div className="card p-6 space-y-5">
+            <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border/60 pb-4">
+              <div>
+                <h3 className="text-lg font-bold text-fg flex items-center gap-2">
+                  <span>👥</span> سجل الأرقام وجهات الاتصال المحفوظة
+                </h3>
+                <p className="text-xs text-muted mt-1">
+                  يقوم البوت تلقائياً بحفظ كل رقم عميل جديد يراسلك، ويمكنك تحميلها بضغطة زر لحفظها في هاتفك.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <a
+                  href={`/api/bot/${bot.id}/contacts?format=vcf`}
+                  download
+                  className="rounded-xl bg-accent/20 border border-accent/40 px-4 py-2 text-xs font-bold text-accent transition hover:bg-accent hover:text-accent-fg"
+                >
+                  📱 تحميل لجهات اتصال الجوال (VCF)
+                </a>
+                <a
+                  href={`/api/bot/${bot.id}/contacts?format=csv`}
+                  download
+                  className="rounded-xl border border-border bg-elevated px-4 py-2 text-xs font-medium hover:text-white transition"
+                >
+                  📊 تحميل ملف إكسل (CSV)
+                </a>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-2">
+              <div>
+                <h4 className="font-semibold text-sm text-fg">سجل الأنشطة والأحداث الحية</h4>
+                <p className="text-xs text-muted">
+                  متابعة عمليات استرجاع الرسائل المحذوفة، تفاعلات الحالات، واستجابات الذكاء الاصطناعي.
+                </p>
+              </div>
+              <a
+                href={`/dashboard/bots/${bot.id}/logs`}
+                className="btn-primary !py-2 !px-4 text-xs font-bold"
+              >
+                عرض السجل الكامل ↗
+              </a>
+            </div>
           </div>
         </div>
       )}
