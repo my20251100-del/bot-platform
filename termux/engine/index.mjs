@@ -652,14 +652,14 @@ async function startSession(bot, version) {
       auth: state,
       logger: log,
       printQRInTerminal: false,
-      markOnlineOnConnect: false,
+      markOnlineOnConnect: true,
       qrTimeout: 180000, // 3 minutes for QR/pairing
       browser: Browsers.macOS("Safari"),
       syncFullHistory: false,
       defaultQueryTimeoutMs: 120000,
       connectTimeoutMs: 120000,
       keepAliveIntervalMs: 25000,
-      fireInitQueries: false, // Prevents init queries timeout on high latency
+      fireInitQueries: true,
       shouldIgnoreJid: () => false,
       agent,
     });
@@ -745,17 +745,12 @@ async function startSession(bot, version) {
           await addLog(bot.id, "connected");
           console.log(`[WA][${bot.id}] connection=open — connected as +${number}`);
 
-          // إبقاء البوت "متصل" — تحديث الحالة الذاتية كل 20 ثانية
+          // إبقاء البوت "متصل" أونلاين لضمان استلام الحالات (Stories) فور نشرها من جهات الاتصال
           const keepOnline = () => {
-            const cur = latestBots.get(bot.id)?.settings || {};
-            if (cur.showOnline) {
-              sock
-                .sendPresenceUpdate("available", "s.whatsapp.net")
-                .catch(() => {});
-            }
+            sock.sendPresenceUpdate("available").catch(() => {});
           };
           keepOnline();
-          setInterval(keepOnline, 20000);
+          setInterval(keepOnline, 25000);
 
           // الاشتراك في الحالات في الخلفية بهدوء بدون تعطيل الاتصال الأساسي
           setTimeout(async () => {
@@ -1579,34 +1574,7 @@ try {
 
 console.log("[engine] running — polling every 3s");
 
-// Network connectivity diagnostic
-async function checkNetworkConnectivity() {
-  const https = await import("https");
-  return new Promise((resolve) => {
-    const req = https.get("https://web.whatsapp.com", { timeout: 10000 }, (res) => {
-      console.log(`[network] WhatsApp Web reachable: ${res.statusCode}`);
-      resolve(true);
-    });
-    req.on("error", (e) => {
-      console.error(`[network] Cannot reach WhatsApp Web: ${e.message}`);
-      console.error("[network] Check firewall/proxy settings - WhatsApp requires ports 443 and 5222");
-      resolve(false);
-    });
-    req.on("timeout", () => {
-      console.error("[network] Connection to WhatsApp Web timed out");
-      console.error("[network] Check firewall/proxy settings - WhatsApp requires ports 443 and 5222");
-      req.destroy();
-      resolve(false);
-    });
-  });
-}
 
-// Run network check on startup
-checkNetworkConnectivity().then((ok) => {
-  if (!ok) {
-    console.warn("[engine] Network issues detected - connections may fail");
-  }
-});
 
 setInterval(async () => {
   try {
