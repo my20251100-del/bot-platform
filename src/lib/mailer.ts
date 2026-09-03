@@ -38,7 +38,20 @@ export async function sendUniversalOtp(params: {
     </div>
   `;
 
-  // 1. إذا كان Gmail SMTP مفعلاً، أرسل منه فوراً إلى أي إيميل في العالم دون أي حظر أو قيود دومين
+  // 1. استخدام Resend كخيار أساسي فائق السرعة عبر HTTP API
+  if (process.env.RESEND_API_KEY) {
+    try {
+      const ok = await sendResendOtp(params);
+      if (ok) {
+        console.log(`[mailer][resend] OTP successfully sent to ${params.to}`);
+        return true;
+      }
+    } catch (err: any) {
+      console.error("[mailer][resend error]", err?.message);
+    }
+  }
+
+  // 2. إذا لم يكن Resend متوفراً أو فشل، تجربة Gmail SMTP كخطة بديلة
   if (gmailUser && gmailPass) {
     try {
       const transporter = nodemailer.createTransport({
@@ -65,14 +78,6 @@ export async function sendUniversalOtp(params: {
     } catch (err: any) {
       console.error("[mailer][gmail error]", err?.message);
     }
-  }
-
-  // 2. إذا لم يكن Gmail SMTP متوفراً، جرب Resend كخطة بديلة
-  try {
-    const ok = await sendResendOtp(params);
-    if (ok) return true;
-  } catch (err: any) {
-    console.error("[mailer][resend error]", err?.message);
   }
 
   return false;

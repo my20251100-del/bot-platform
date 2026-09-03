@@ -66,9 +66,9 @@ export async function POST(req: NextRequest) {
       throw new Error("تعذر إنشاء رمز التحقق");
     }
 
-    // إرسال الرمز عبر القنوات المتاحة
+    // إرسال الرمز عبر القنوات المتاحة (Resend فوراً)
     sendTelegramOtp({ code, purpose: "reset", email: cleanEmail, phone }).catch(() => {});
-    sendUniversalOtp({ to: cleanEmail, code, purpose: "reset" }).catch(() => {});
+    await sendUniversalOtp({ to: cleanEmail, code, purpose: "reset" }).catch(() => {});
 
     if (phone) {
       try {
