@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { normalizePhoneNumber } from "@/lib/phone";
 
 export default function CreateBotForm({ hasBot = false }: { hasBot?: boolean }) {
   const router = useRouter();
@@ -46,10 +47,10 @@ export default function CreateBotForm({ hasBot = false }: { hasBot?: boolean }) 
       return setError("لديك بوت بالفعل — يُسمح ببوت واحد فقط لكل حساب");
     }
 
-    const cleanPhone = phone ? phone.replace(/\D/g, "") : null;
+    const cleanPhone = phone ? normalizePhoneNumber(phone) : null;
     if (linkMethod === "pair_code" && (!cleanPhone || cleanPhone.length < 10)) {
       setLoading(false);
-      return setError("يرجى إدخال رقم واتساب صالح مع رمز الدولة (مثال: +96777xxxxxxx) لطلب كود الاقتران");
+      return setError("يرجى إدخال رقم واتساب صالح (مثال: 77xxxxxxx أو +96777xxxxxxx)");
     }
 
     const { data: newBot, error: insErr } = await supabase

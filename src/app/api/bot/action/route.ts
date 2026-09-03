@@ -75,7 +75,12 @@ export async function POST(req: NextRequest) {
           link_method: method,
           pair_code: null,
           qr: null,
-          metadata: { last_error: null, error_at: null, attempt: 0 },
+          metadata: {
+            last_error: null,
+            error_at: null,
+            attempt: 0,
+            request_restart: Date.now(),
+          },
           updated_at: new Date().toISOString(),
         })
         .eq("id", bot.id)

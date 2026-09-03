@@ -670,17 +670,22 @@ async function startSession(bot, version) {
       lidTrustedTokenIssueToLid: true,
     };
 
-    sessions.set(bot.id, { sock, botPhone: bot.phone, ready: false, generation: gen });
+    sessions.set(bot.id, {
+      sock,
+      botPhone: bot.phone,
+      ready: false,
+      generation: gen,
+      linkMethod: bot.link_method,
+      startedAt: Date.now(),
+    });
 
     sock.ev.on("creds.update", saveCreds);
 
     sock.ev.on("connection.update", async (u) => {
       try {
         // تحقق من الجيل - تجاهل أحداث السوكتات القديمة
-        const currentGen = socketGenerations.get(bot.id);
-        const session = sessions.get(bot.id);
-        if (session && session.generation !== currentGen) {
-          console.log(`[WA][${bot.id}] ignoring stale connection.update from old generation`);
+        const activeGen = socketGenerations.get(bot.id);
+        if (gen !== activeGen) {
           return;
         }
         
@@ -810,10 +815,8 @@ async function startSession(bot, version) {
           || code;
         
         // تحقق من الجيل - تجاهل أحداث السوكتات القديمة
-        const currentGenAfterClose = socketGenerations.get(bot.id);
-        const sessionAfterClose = sessions.get(bot.id);
-        if (sessionAfterClose && sessionAfterClose.generation !== currentGenAfterClose) {
-          console.log(`[WA][${bot.id}] ignoring stale connection.close from old generation`);
+        const activeGenAfterClose = socketGenerations.get(bot.id);
+        if (gen !== activeGenAfterClose) {
           return;
         }
         
@@ -1552,10 +1555,13 @@ async function startSession(bot, version) {
   }
 }
 
-async function stopSession(botId, unlink = false) {
+async function stopSession(botId, unlink = false, restart = false) {
   sessionFailures.delete(botId);
   sessionRetryAt.delete(botId);
   invalidSessions.delete(botId);
+  // نرفع رقم الجيل فوراً ليتجاهل السوكت القديم أي أحداث إغلاق لاحقة
+  socketGenerations.set(botId, (socketGenerations.get(botId) || 0) + 1);
+
   const entry = sessions.get(botId);
   if (!entry) {
     if (unlink) await updateBot(botId, { command: "stop", status: "disconnected", linked_number: null, qr: null });
@@ -1566,6 +1572,8 @@ async function stopSession(botId, unlink = false) {
     if (unlink) {
       await entry.sock.logout();
       await updateBot(botId, { command: "stop", status: "disconnected", linked_number: null, qr: null });
+    } else if (restart) {
+      entry.sock.end(undefined);
     } else {
       entry.sock.end(undefined);
       await updateBot(botId, { status: "disconnected", qr: null });
@@ -1655,6 +1663,22 @@ setInterval(async () => {
           invalidSessions.delete(bot.id);
           sessionFailures.delete(bot.id);
           sessionRetryAt.delete(bot.id);
+
+          const curSession = sessions.get(bot.id);
+          if (curSession && !curSession.ready) {
+            const methodChanged = curSession.linkMethod && curSession.linkMethod !== bot.link_method;
+            const phoneChanged = digits && curSession.botPhone !== digits;
+            const restartRequested =
+              bot.metadata?.request_restart &&
+              Number(bot.metadata.request_restart) > (curSession.startedAt || 0);
+
+            if (methodChanged || phoneChanged || restartRequested) {
+              console.log(
+                `[poll] Bot ${bot.id} pending session reset (methodChanged=${methodChanged}, phoneChanged=${phoneChanged}, restartRequested=${restartRequested})`
+              );
+              await stopSession(bot.id, false, true);
+            }
+          }
         }
         const lastRetry = sessionRetryAt.get(bot.id) || 0;
         const now = Date.now();

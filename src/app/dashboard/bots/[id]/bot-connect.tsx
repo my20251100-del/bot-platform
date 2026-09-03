@@ -247,27 +247,34 @@ export default function BotConnect({ initial }: { initial: BotRow }) {
                       أدخل هذا الكود في تطبيق واتساب بجوالك:
                     </p>
 
-                    <div className="flex flex-col sm:flex-row items-center gap-3 rounded-2xl border-2 border-accent/60 bg-surface px-6 py-4 shadow-[0_0_24px_rgba(0,212,255,0.25)]">
-                      <span
-                        dir="ltr"
-                        className="font-mono text-4xl sm:text-5xl font-black tracking-[0.35em] text-accent select-all"
-                      >
-                        {bot.pair_code}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (bot.pair_code) {
-                            navigator.clipboard.writeText(bot.pair_code);
-                            setCopied(true);
-                            setTimeout(() => setCopied(false), 2000);
-                          }
-                        }}
-                        className="rounded-xl bg-accent/20 px-4 py-2 text-xs font-bold text-accent transition hover:bg-accent hover:text-accent-fg"
-                      >
-                        {copied ? "تم النسخ ✓" : "نسخ الكود 📋"}
-                      </button>
-                    </div>
+                    {(() => {
+                      const rawCode = bot.pair_code.replace(/[^A-Za-z0-9]/g, "");
+                      const displayCode =
+                        rawCode.length === 8
+                          ? `${rawCode.slice(0, 4)}-${rawCode.slice(4)}`
+                          : bot.pair_code;
+                      return (
+                        <div className="flex flex-col sm:flex-row items-center gap-4 rounded-2xl border-2 border-accent/60 bg-surface px-8 py-5 shadow-[0_0_30px_rgba(0,212,255,0.25)]">
+                          <span
+                            dir="ltr"
+                            className="font-mono text-4xl sm:text-6xl font-black tracking-[0.2em] text-accent select-all"
+                          >
+                            {displayCode}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(rawCode);
+                              setCopied(true);
+                              setTimeout(() => setCopied(false), 2000);
+                            }}
+                            className="rounded-xl bg-accent/20 px-5 py-2.5 text-sm font-bold text-accent transition hover:bg-accent hover:text-accent-fg active:scale-95 shadow-sm"
+                          >
+                            {copied ? "تم النسخ ✓" : "نسخ الكود 📋"}
+                          </button>
+                        </div>
+                      );
+                    })()}
 
                     <div className="mt-2 text-xs text-muted max-w-md text-right space-y-1 bg-elevated/40 p-3 rounded-xl border border-border/50">
                       <p className="font-semibold text-fg">خطوات الربط في هاتفك:</p>

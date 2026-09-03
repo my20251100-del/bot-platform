@@ -5,7 +5,19 @@
 
 export function normalizePhoneNumber(phone: string): string {
   if (!phone) return "";
-  const cleaned = String(phone).replace(/\D/g, "").replace(/^0+/, "");
+  let cleaned = String(phone).replace(/\D/g, "").replace(/^0+/, "");
+  // دعم تلقائي للأرقام اليمنية إذا أُدخلت بدون مفتاح الدولة (مثل 77xxxxxxx أو 71xxxxxxx أو 73xxxxxxx)
+  if (cleaned.length === 9 && /^7[0-9]{8}$/.test(cleaned)) {
+    cleaned = "967" + cleaned;
+  }
+  // دعم تلقائي للأرقام السعودية (مثل 5xxxxxxx)
+  if (cleaned.length === 9 && /^5[0-9]{8}$/.test(cleaned)) {
+    cleaned = "966" + cleaned;
+  }
+  // دعم تلقائي للأرقام المصرية (مثل 10xxxxxxx أو 11xxxxxxx أو 12xxxxxxx)
+  if (cleaned.length === 10 && /^1[0125][0-9]{8}$/.test(cleaned)) {
+    cleaned = "20" + cleaned;
+  }
   return cleaned;
 }
 
