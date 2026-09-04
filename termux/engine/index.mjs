@@ -897,16 +897,22 @@ async function startSession(bot, version) {
           return;
         }
 
+        const isRegistered = Boolean(state?.creds?.registered || sock?.authState?.creds?.registered || bot.linked_number || sock?.user?.id);
+
         // تشخيص إضافي للاتصال
         if (code === 428) {
-          console.log(`[WA][${bot.id}] ⚠️  QR/pairing code expired - clearing partial credentials for fresh start`);
+          if (!isRegistered) {
+            console.log(`[WA][${bot.id}] ⚠️  QR/pairing code expired - clearing partial credentials for fresh start`);
+          } else {
+            console.log(`[WA][${bot.id}] 🔄 Connection closed (428) on linked bot - network drop, preserving auth & auto-reconnecting`);
+          }
         } else if (code === 401) {
           console.log(`[WA][${bot.id}] ⚠️  Unauthorized - session may be invalid`);
         }
 
-        // 428 = pairing code expired - the saved credentials are in a partial state
-        // that cannot be resumed. Clear them and start fresh with new pairing.
-        if (code === 428) {
+        // 428 = pairing code expired فقط إذا كان البوت غير مسجل بعد!
+        // إذا كان البوت مربوطاً بالفعل (isRegistered=true)، كود 428 هو مجرد انقطاع شبكة طبيعي ويجب إعادة الاتصال فوراً
+        if (code === 428 && !isRegistered) {
           await stopSession(bot.id);
           await supabase.from("bot_auth").delete().eq("bot_id", bot.id);
           await supabase.from("bot_keys").delete().eq("bot_id", bot.id);
@@ -921,8 +927,7 @@ async function startSession(bot, version) {
           sessionFailures.delete(bot.id);
           sessionRetryAt.delete(bot.id);
           
-          // Add to invalid sessions so it DOES NOT automatically retry.
-          // The user must explicitly request a new code from the dashboard (which sets status: "pending").
+          // Add to invalid sessions so it DOES NOT automatically retry until user clicks pair
           invalidSessions.add(bot.id);
           return;
         }
@@ -977,11 +982,11 @@ async function startSession(bot, version) {
         }
         const fails = sessionFailures.get(bot.id) || 0;
         // للأخطاء العابرة، انتظار قصير قبل إعادة المحاولة
-        const backoffMs = isTransient ? 5000 : backoffFor(fails);
+        const backoffMs = isTransient ? 3000 : backoffFor(fails);
         sessionRetryAt.set(bot.id, Date.now() + backoffMs);
 
         await updateBot(bot.id, {
-          status: "disconnected",
+          status: isRegistered ? "pending" : "disconnected",
           metadata: {
             last_error: reasonTag ? `code ${code}: ${reasonTag}` : `code ${code}`,
             error_at: new Date().toISOString(),
@@ -989,6 +994,17 @@ async function startSession(bot, version) {
           },
         });
         console.log(`[WA][${bot.id}] reconnect in ${backoffMs}ms (attempt ${fails}, transient=${isTransient})`);
+
+        // إذا كان البوت مربوطاً والخطأ عابر، أعد الاتصال فوراً بعد مهلة الانتظار القصيرة
+        if (isRegistered && isTransient && bot.command === "start") {
+          console.log(`[WA][${bot.id}] ⚡ Auto-reconnecting registered bot in ${backoffMs}ms...`);
+          setTimeout(() => {
+            if (!sessions.has(bot.id) && !startingBots.has(bot.id)) {
+              startSession(bot, version);
+            }
+          }, backoffMs);
+          return;
+        }
 
         // حد واقٍ من الحلقات: بعد N من الفشل المتتالي أوقف المحاولات مؤقتاً
         if (fails >= MAX_CONSECUTIVE_FAILURES) {
