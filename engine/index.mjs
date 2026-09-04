@@ -624,7 +624,7 @@ async function handleConnectionClose(session, error) {
 
   // 2. Unregistered Pairing Expired (code 428)
   if (category === DisconnectCategory.PAIRING_EXPIRED && !isRegistered) {
-    console.log(`[WA][${botId}] Pairing code / QR expired for unregistered bot.`);
+    console.log(`[WA][${botId}] Pairing code / QR expired for unregistered bot. Resetting auth for fresh pairing...`);
     await session.destroy("pairing_expired");
     activeSessions.delete(botId);
 
@@ -636,8 +636,7 @@ async function handleConnectionClose(session, error) {
     }
 
     await updateBot(botId, {
-      status: "disconnected",
-      command: "stop",
+      status: "pending",
       pair_code: null,
       qr: null,
       metadata: { last_error: "pairing_expired", error_at: new Date().toISOString() },

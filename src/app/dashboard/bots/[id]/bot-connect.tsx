@@ -91,7 +91,8 @@ export default function BotConnect({ initial }: { initial: BotRow }) {
     }
   }
 
-  const isLinked = !!bot.linked_number;
+  const isConnected = bot.status === "connected";
+  const isLinked = isConnected && !!bot.linked_number;
   const isPending = !isLinked && (
     bot.status === "pending" ||
     !!bot.pair_code ||
