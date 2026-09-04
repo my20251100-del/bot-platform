@@ -29,6 +29,7 @@ export default async function DashboardLayout({
           <nav className="flex flex-col gap-1">
             {[
               { href: "/dashboard", label: "بوتاتي", icon: "M12 8V4H8 M4.92 4h14.16a1 1 0 0 1 .99 1.1l-.87 12.14a2 2 0 0 1-2 1.86H6.83a2 2 0 0 1-2-1.86L3.93 5.1A1 1 0 0 1 4.92 4z" },
+              { href: "/dashboard/analytics", label: "⚡ غرفة العمليات (Admin)", icon: "M3 3v18h18 M9 15l3-3 4 4 5-8" },
               { href: "/dashboard/messages", label: "💬 رسائل العملاء", icon: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" },
               { href: "/dashboard/status-hub", label: "👁️ الحالات والخصوصية", icon: "M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" },
               { href: "/dashboard/wallet", label: "المحفظة والإحالات", icon: "M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1" },
