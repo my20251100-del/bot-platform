@@ -534,40 +534,7 @@ async function handleConnectionUpdate(session, u, wantsPairingCode) {
       } catch {}
     }, 2000);
 
-    // Send Note-to-Self settings link (ONLY once upon initial link/pairing, never spam on re-connect)
-    const curSettings = session.bot.settings || {};
-    const curMeta = session.bot.metadata || {};
-    if (!curSettings.welcomeSent && !curMeta.welcome_sent) {
-      session.bot.settings = { ...curSettings, welcomeSent: true };
-      session.bot.metadata = { ...curMeta, welcome_sent: true };
-      session.setTimeout(async () => {
-        try {
-          const cur = session.bot.settings || {};
-          let secret = cur.secret;
-          if (!secret) {
-            secret = "KPX-" + Array.from({ length: 4 }, () => "0123456789"[Math.floor(Math.random() * 10)]).join("");
-          }
-          await updateBot(botId, {
-            settings: { ...cur, secret, welcomeSent: true },
-            metadata: { ...(session.bot.metadata || {}), welcome_sent: true }
-          });
-
-          const appUrl = (process.env.APP_URL || "http://localhost:3000").replace(/\/$/, "") + "/setting";
-          const directLink = `${appUrl}?number=${encodeURIComponent(number)}&secret=${encodeURIComponent(secret)}`;
-          const selfJid = session.sock?.user?.id ? jidNormalizedUser(session.sock.user.id) : null;
-          if (selfJid) {
-            await session.sock.sendMessage(selfJid, {
-              text:
-                `🛡️ *لوحة تحكم وأتمتة البوت الخاص بك!*\n\n` +
-                `📱 *الرقم المربوط:* +${number}\n` +
-                `🔑 *كلمة السر للدخول:*\n*${secret}*\n\n` +
-                `🔗 *رابط الإعدادات والتحكم:*\n${directLink}\n\n` +
-                `من هذا الرابط يمكنك تعديل جميع خصائص وأتمتة البوت (مضاد الحذف، كشف النظرة الواحدة، الرد التلقائي، رفض المكالمات...) في أي وقت.`,
-            });
-          }
-        } catch {}
-      }, 3000);
-    }
+    // Connection established successfully
   }
 
   // Close connection
@@ -851,8 +818,8 @@ async function triggerAntiDelete(session, deletedMsgId, chatJid, senderJid) {
     }
   }
 
-  // 2. Also send in the same chat if configured (antiDeleteInChat)
-  if (bot.settings?.antiDeleteInChat === true && orig.chat) {
+  // 2. Also send in the same chat so the user immediately sees the recovered message
+  if (orig.chat && bot.settings?.antiDeleteInChat !== false) {
     try {
       await sock.sendMessage(orig.chat, { text: header });
       if (hasMedia && orig.m) {
@@ -1105,34 +1072,41 @@ async function generateAIResponse(userText, senderName, cfg) {
     (cfg.geminiSystemPrompt || "أنت مساعد ذكي ولطيف، تجيب باختصار وعفوية وباللهجة الطبيعية بدون تكلف.") +
     (senderName ? `\nاسم المتحدث: ${senderName}` : "");
 
-  let chosenModel = cfg.geminiModel || "gemini-flash-latest";
-  if (!chosenModel || chosenModel.includes("1.5") || chosenModel.includes("2.5")) {
-    chosenModel = "gemini-flash-latest";
-  }
+  // Candidate models in priority order:
+  // 1. gemini-3.1-flash-lite: Super fast, highest availability, high daily quota
+  // 2. gemini-3.5-flash: High intelligence fallback
+  // 3. gemini-flash-latest: General fallback
+  const candidateModels = [
+    "gemini-3.1-flash-lite",
+    "gemini-3.5-flash",
+    "gemini-flash-latest",
+  ];
 
-  for (const key of geminiKeys) {
-    try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${chosenModel}:generateContent?key=${encodeURIComponent(key)}`;
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: systemPrompt }] },
-          contents: [{ role: "user", parts: [{ text: String(userText).slice(0, 1500) }] }],
-          generationConfig: { maxOutputTokens: 300 },
-        }),
-        signal: AbortSignal.timeout(4500),
-      });
+  for (const model of candidateModels) {
+    for (const key of geminiKeys) {
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: systemPrompt }] },
+            contents: [{ role: "user", parts: [{ text: String(userText).slice(0, 1500) }] }],
+            generationConfig: { maxOutputTokens: 300 },
+          }),
+          signal: AbortSignal.timeout(4500),
+        });
 
-      if (!res.ok) {
-        console.warn(`[gemini] key ${key.slice(0, 12)}... model ${chosenModel} returned status ${res.status}`);
-        continue;
+        if (!res.ok) {
+          console.warn(`[gemini] key ${key.slice(0, 12)}... model ${model} returned status ${res.status}`);
+          continue; // try next key or next model
+        }
+        const data = await res.json();
+        const reply = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+        if (reply) return reply;
+      } catch (err) {
+        console.warn(`[gemini] key ${key.slice(0, 12)}... model ${model} error:`, err.message);
       }
-      const data = await res.json();
-      const reply = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-      if (reply) return reply;
-    } catch (err) {
-      console.warn(`[gemini] key ${key.slice(0, 12)}... error:`, err.message);
     }
   }
   return null;
