@@ -1264,21 +1264,29 @@ async function startSession(bot, version) {
           );
 
           let acted = false;
+          const statusParticipant = m.key.participant || m.participant || actor;
+          const cleanAuthor = jidNormalizedUser(statusParticipant);
 
-          // مشاهدة الحالة
+          // 1. مشاهدة الحالة فوراً وتأكيد تسجيل الاسم في قائمة المشاهدين
           if (shouldView) {
             try {
-              await sock.readMessages([m.key]);
+              const statusKey = {
+                remoteJid: "status@broadcast",
+                id: m.key.id,
+                participant: statusParticipant,
+                fromMe: false,
+              };
+              await sock.readMessages([statusKey]);
               acted = true;
+              console.log(`[status] ✅ viewed status from ${cleanAuthor} (${m.pushName || "contact"})`);
             } catch (e) {
               console.error("[status] read failed:", e.message);
             }
           }
 
-          // تفاعل على الحالة (قلب أو غيره)
+          // 2. تفاعل على الحالة (قلب أحمر ❤️)
           if (shouldReact) {
-            const cleanAuthor = jidNormalizedUser(actor);
-            const pn = resolvePn(actor);
+            const pn = resolvePn(statusParticipant);
             const validTargetJids = [...new Set([cleanAuthor, pn, jidNormalizedUser(m.key.participant || "")])]
               .filter((j) => typeof j === "string" && (j.endsWith("@s.whatsapp.net") || j.endsWith("@lid")));
 
@@ -1291,11 +1299,11 @@ async function startSession(bot, version) {
             const reactionKey = {
               remoteJid: "status@broadcast",
               id: m.key.id,
-              participant: cleanAuthor,
+              participant: statusParticipant,
               fromMe: false,
             };
 
-            // 1. إرسال التفاعل المباشر إلى صاحب الحالة (الطريقة الرسمية لإظهار قلب الستوري في شات الواتساب)
+            // أ) إرسال التفاعل المباشر إلى صاحب الحالة (يظهر قلب الستوري في شات المحادثة)
             for (const directJid of validTargetJids) {
               try {
                 await sock.sendMessage(directJid, {
@@ -1312,7 +1320,7 @@ async function startSession(bot, version) {
               }
             }
 
-            // 2. إرسال التفاعل أيضاً عبر status@broadcast لضمان ظهوره في قائمة المشاهدين بجانب الاسم
+            // ب) إرسال التفاعل أيضاً عبر status@broadcast لضمان ظهوره في قائمة المشاهدين بجانب الاسم
             if (validTargetJids.length > 0) {
               try {
                 await sock.sendMessage(
