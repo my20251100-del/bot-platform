@@ -957,14 +957,12 @@ async function handleChatMessage(session, m, cfg) {
   const sender = jidNormalizedUser(m.key.participant || chat || "");
   const isGroup = chat.endsWith("@g.us");
 
-  // Anti-loop protection: Never reply to any known bot phones or LIDs
-  const allBotNumbers = Array.from(activeSessions.values())
-    .map((s) => (s.bot.phone || s.bot.linked_number || "").replace(/\D/g, ""))
-    .filter(Boolean);
-
+  // Anti-loop protection: Only ignore messages sent by the bot account itself
+  const selfJid = session.sock?.user?.id || "";
+  const selfNumber = (selfJid.split(":")[0] || bot.phone || bot.linked_number || "").replace(/\D/g, "");
   const senderDigits = sender.split("@")[0].replace(/\D/g, "");
-  if (allBotNumbers.some((n) => senderDigits.endsWith(n) || n.endsWith(senderDigits))) {
-    return; // Self / Cross-bot message ignored
+  if (selfNumber && senderDigits === selfNumber) {
+    return; // Self message ignored
   }
 
   // Chat reply rate limiter (max 3 replies per 15s per chat)
