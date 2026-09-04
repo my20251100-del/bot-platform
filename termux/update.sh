@@ -16,6 +16,8 @@ if [ ! -d "node_modules" ]; then
     npm install --omit=dev
 fi
 
+sed -i 's/if (!creds.me)/if (!creds.me || !creds.registered)/g' node_modules/@whiskeysockets/baileys/lib/Socket/socket.js 2>/dev/null || true
+
 chmod +x start.sh update.sh 2>/dev/null || true
 
 echo "========================================================"

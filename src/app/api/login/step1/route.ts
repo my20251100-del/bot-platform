@@ -69,11 +69,12 @@ export async function POST(req: NextRequest) {
       await queueOtpSms(phone, buildOtpMessage(code));
       logOtpEvent("login_queue_success", { userId: usr.id.slice(0, 8), phoneLength: phone.length });
     } catch (e: any) {
-      logOtpError("login_queue_failed", { userId: usr.id.slice(0, 8), error: e.message, phoneLength: phone.length });
-      return NextResponse.json({ success: true, requiresVerification: true, dev_otp: code, message: "تم إرسال رمز التحقق إلى تيليجرام", email });
+      const devOtp = process.env.NODE_ENV === "development" ? code : undefined;
+      return NextResponse.json({ success: true, requiresVerification: true, dev_otp: devOtp, message: "تم إرسال رمز التحقق إلى حسابك", email });
     }
 
-    return NextResponse.json({ success: true, requiresVerification: true, dev_otp: code, message: "تم إرسال رمز التحقق إلى بريدك الإلكتروني", email });
+    const devOtp = process.env.NODE_ENV === "development" ? code : undefined;
+    return NextResponse.json({ success: true, requiresVerification: true, dev_otp: devOtp, message: "تم إرسال رمز التحقق إلى حسابك", email });
   } catch (e: any) {
     logOtpError("login_fatal", { error: e.message });
     return NextResponse.json({ success: false, code: "LOGIN_FAILED", message: e.message || "حدث خطأ غير متوقع" }, { status: 500 });

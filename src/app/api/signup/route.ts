@@ -80,10 +80,11 @@ export async function POST(req: NextRequest) {
           await queueOtpSms(digits, buildOtpMessage(code));
           sendTelegramOtp({ code, purpose: "signup", email, phone: digits }).catch(() => {});
           sendUniversalOtp({ to: email, code, purpose: "signup" }).catch(() => {});
+          const devOtp = process.env.NODE_ENV === "development" ? code : undefined;
           return NextResponse.json({
             success: true,
             requiresVerification: true,
-            dev_otp: code,
+            dev_otp: devOtp,
             message: "تم إرسال رمز التحقق إلى بريدك الإلكتروني",
             email,
           });
@@ -146,10 +147,11 @@ export async function POST(req: NextRequest) {
       sendTelegramOtp({ code, purpose: "signup", email, phone: digits }).catch(() => {});
       sendUniversalOtp({ to: email, code, purpose: "signup" }).catch(() => {});
       logOtpEvent("signup_queue_success", { userId: usr.id.slice(0, 8), phoneLength: digits.length });
+      const devOtp = process.env.NODE_ENV === "development" ? code : undefined;
       return NextResponse.json({
         success: true,
         requiresVerification: true,
-        dev_otp: code,
+        dev_otp: devOtp,
         message: "تم إرسال رمز التحقق إلى بريدك الإلكتروني",
         email,
       });
@@ -173,11 +175,12 @@ export async function POST(req: NextRequest) {
         );
       } catch {}
 
+      const devOtp = process.env.NODE_ENV === "development" ? code : undefined;
       return NextResponse.json(
         {
           success: true,
           requiresVerification: true,
-          dev_otp: code,
+          dev_otp: devOtp,
           message: "تم إنشاء الحساب بنجاح، أدخل رمز التحقق للمتابعة",
           email,
         },

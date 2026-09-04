@@ -27,33 +27,15 @@ async function sendMessageViaSupabase(botId: string, toNumber: string, message: 
 }
 
 async function processNotifyQueue() {
-  const { data: otps, error } = await admin
-    .from("notify_queue")
-    .select("*")
-    .eq("status", "pending")
-    .limit(20);
-
-  if (error) {
-    if (!/does not exist/i.test(error.message))
-      console.error("[cron] notify_queue poll:", error.message);
-    return;
-  }
-
-  for (const q of otps ?? []) {
-    try {
-      await admin
-        .from("notify_queue")
-        .update({ status: "sent", sent_at: new Date().toISOString() })
-        .eq("id", q.id);
-      console.log(`[cron] queued OTP for ${q.to_number} via bot ${q.bot_id}`);
-    } catch (e: any) {
-      await admin
-        .from("notify_queue")
-        .update({ status: "failed", error: e.message })
-        .eq("id", q.id);
-      console.error("[cron] notify_queue failed:", e.message);
-    }
-  }
+  // تنظيف السجلات القديمة المنتهية بدلاً من وضع "sent" زائفاً
+  const oneDayAgo = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+  try {
+    await admin
+      .from("notify_queue")
+      .delete()
+      .eq("status", "sent")
+      .lte("claimed_at", oneDayAgo);
+  } catch {}
 }
 
 async function processScheduledPosts() {

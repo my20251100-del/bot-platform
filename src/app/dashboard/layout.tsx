@@ -37,6 +37,7 @@ export default async function DashboardLayout({
               { href: "/dashboard/queen", label: "إعدادات QUEEN", icon: "M12 3a3 3 0 0 0-3 3v1H7a2 2 0 0 0-2 2v1h14V9a2 2 0 0 0-2-2h-2V6a3 3 0 0 0-3-3z M5 12h14l-1 9H6z" },
               { href: "/dashboard/antilinks", label: "حظر الروابط والكلمات", icon: "M10 14a5 5 0 0 0 7.5.05l3-3a5 5 0 0 0-7-7l-1.5 1.5 M14 10a5 5 0 0 0-7.5-.05l-3 3a5 5 0 0 0 7 7l1.5-1.5" },
               { href: "/dashboard/gemini", label: "محرك الذكاء (Gemini)", icon: "M12 2a9 9 0 1 0 9 9 M12 8l2.5 2.5L12 13l-2.5-2.5z M12 13v4 M9 19l-1 3 M15 19l1 3" },
+              { href: "/dashboard/logs", label: "📜 سجل العمليات (Logs)", icon: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8" },
             ].map((item) => (
               <Link
                 key={item.href}

@@ -7,7 +7,14 @@ import { useRouter } from "next/navigation";
 export default function DeployBotPage() {
   const router = useRouter();
   const [mode, setMode] = useState<"pair" | "qr">("pair");
-  const [phone, setPhone] = useState("");
+  const [phone, setPhone] = useState(() => {
+    if (typeof window !== "undefined") {
+      const sp = new URLSearchParams(window.location.search);
+      const p = sp.get("phone") || sp.get("number");
+      return p ? p.replace(/\D/g, "") : "";
+    }
+    return "";
+  });
   const [agreed, setAgreed] = useState(true);
   const [loading, setLoading] = useState(false);
   const [pairCode, setPairCode] = useState<string | null>(null);
@@ -18,18 +25,6 @@ export default function DeployBotPage() {
   const [connectedBotId, setConnectedBotId] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [botSecret, setBotSecret] = useState<string | null>(null);
-
-  // قراءة الرقم إذا كان ممرراً في الرابط ?phone= أو ?number=
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const sp = new URLSearchParams(window.location.search);
-      const p = sp.get("phone") || sp.get("number");
-      if (p) {
-        const clean = p.replace(/\D/g, "");
-        setPhone(clean);
-      }
-    }
-  }, []);
 
   // مؤقت التنازلي للكود
   useEffect(() => {

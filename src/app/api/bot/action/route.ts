@@ -59,8 +59,8 @@ export async function POST(req: NextRequest) {
           .neq("id", bot.id);
       }
 
-      // مسح أي جلسات مصادقة قديمة غير مكتملة
-      if (bot.status !== "connected") {
+      // مسح جلسات المصادقة فقط إذا لم يكن البوت مربوطاً مسبقاً برقم
+      if (!bot.linked_number && bot.status !== "connected") {
         await admin.from("bot_auth").delete().eq("bot_id", bot.id);
         await admin.from("bot_keys").delete().eq("bot_id", bot.id);
       }

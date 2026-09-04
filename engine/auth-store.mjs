@@ -1,13 +1,56 @@
+// ============================================================================
+// Bot Platform — Resilient Supabase Auth Store for Baileys
+// Production Grade: Debounced Writes, Memory Caching, Auto-Recovery
+// ============================================================================
+
 import { createClient } from "@supabase/supabase-js";
 import { initAuthCreds } from "@whiskeysockets/baileys";
+import { existsSync, readFileSync } from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 
-const URL = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "";
-const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY || "";
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const supabase =
-  URL && KEY
-    ? createClient(URL, KEY)
-    : null;
+// Dynamic environment loading: ensures Supabase credentials are always found
+function loadEnv() {
+  for (const envFile of [
+    path.resolve(process.cwd(), ".env.local"),
+    path.resolve(process.cwd(), ".env"),
+    path.resolve(__dirname, ".env.local"),
+    path.resolve(__dirname, ".env"),
+    path.resolve(__dirname, "..", ".env.local"),
+    path.resolve(__dirname, "..", ".env"),
+  ]) {
+    try {
+      if (existsSync(envFile)) {
+        const content = readFileSync(envFile, "utf8");
+        for (const rawLine of content.split(/\r?\n/)) {
+          const line = rawLine.trim();
+          if (!line || line.startsWith("#")) continue;
+          const eq = line.indexOf("=");
+          if (eq === -1) continue;
+          const k = line.slice(0, eq).trim();
+          const v = line.slice(eq + 1).trim().replace(/^['"]|['"]$/g, "");
+          if (k && !process.env[k]) process.env[k] = v;
+        }
+      }
+    } catch {}
+  }
+}
+
+let _supabase = null;
+export function getSupabase() {
+  if (_supabase) return _supabase;
+  loadEnv();
+  const URL = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "";
+  const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY || "";
+  if (URL && KEY) {
+    _supabase = createClient(URL, KEY, {
+      auth: { persistSession: false },
+    });
+  }
+  return _supabase;
+}
 
 function toBufferSafe(v) {
   if (Buffer.isBuffer(v)) return { __buffer: true, data: v.toString("base64") };
@@ -15,10 +58,14 @@ function toBufferSafe(v) {
   if (v && typeof v === "object" && v.constructor && v.constructor.name === "Object") return v;
   return v;
 }
+
 function fromBufferSafe(v) {
-  if (v && typeof v === "object" && v.__buffer) return Buffer.from(v.data, "base64");
+  if (v && typeof v === "object" && v.__buffer && typeof v.data === "string") {
+    return Buffer.from(v.data, "base64");
+  }
   return v;
 }
+
 function deepBufferSafe(obj) {
   if (Buffer.isBuffer(obj)) return toBufferSafe(obj);
   if (obj instanceof Uint8Array) return toBufferSafe(obj);
@@ -30,6 +77,7 @@ function deepBufferSafe(obj) {
   }
   return toBufferSafe(obj);
 }
+
 function deepFromBufferSafe(obj) {
   if (Buffer.isBuffer(obj)) return obj;
   if (obj instanceof Uint8Array) return obj;
@@ -71,77 +119,58 @@ function hasValidCreds(creds) {
   return true;
 }
 
-// جلسة Baileys «صالحة للاستئناف» فقط عندما يكون مسارها سليماً:
-//  - مسجّلة بالكامل (registered=true) مع me → جهاز مرتبط فعلياً.
-//  - أو في أول إنشاء نظيف (initAuthCreds) قبل أي اقتران: لا me بعد.
-//  - أو في مرحلة الاقتران (registered=undefined/false مع me) → محاولة اقتران قائمة
-// أي creds تحتوي me لكن registered=false = «نصف اقتران» من محاولة قديمة
-// (نتيجة طلب pairing code سابق) → تُعد تالتة وتُعاد ضبطها من الصفر؛
-// وإلا رفض واتساب إعادة الاتصال بها دائماً بـ 401 loggedOut.
 function isResumableSession(creds) {
   if (!creds || typeof creds !== "object") return false;
-  
-  // البيانات الفارغة غير صالحة - لازم نبدأ من جديد
-  if (Object.keys(creds).length === 0) return false;
+  // If registered with an account, it's fully resumable
+  if (creds.registered && creds.me) return true;
+  if (hasValidCreds(creds)) return true;
+  // If in initial pairing stage with fundamental keys
+  return Boolean(creds.noiseKey && creds.signedIdentityKey);
+}
 
-  // جلسة مسجلة بالكامل بنجاح مع خوادم واتساب
-  if (creds.registered === true) {
-    return !!creds.me?.id && hasValidCreds(creds);
+// Global registry of active debounced cred savers for clean flushing
+const activeSavers = new Map();
+
+export async function flushAllCreds() {
+  const promises = [];
+  for (const saver of activeSavers.values()) {
+    if (typeof saver.flush === "function") {
+      promises.push(saver.flush());
+    }
   }
-
-  // إذا كانت المفاتيح الأساسية متوفرة بالكامل (أثناء الاقتران أو التجهيز)
-  // لا نحذفها لأنها تحتوي على pairingEphemeralKeyPair المطلوب لفك تشفير كود الاقتران
-  if (hasValidCreds(creds)) {
-    return true;
-  }
-
-  // جلسة نظيفة قبل الاقتران تحتوي على المفاتيح الأساسية
-  return !!(creds.noiseKey && creds.signedIdentityKey);
+  await Promise.allSettled(promises);
 }
 
 export async function createSupabaseAuthStore(botId) {
+  const supabase = getSupabase();
   if (!supabase) {
     throw new Error(
-      "[auth-store] بيانات Supabase غير متوفرة! يرجى ضبط SUPABASE_URL و SUPABASE_SERVICE_ROLE_KEY في ملف .env أو .env.local"
+      "[auth-store] Supabase credentials not found. Configure SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY."
     );
   }
-  const { data: credRow } = await supabase
+
+  // Load creds
+  const { data: credRow, error: credErr } = await supabase
     .from("bot_auth")
     .select("creds")
     .eq("bot_id", botId)
-    .single();
+    .maybeSingle();
+
+  if (credErr) {
+    console.warn(`[auth-store][${botId}] warning loading creds:`, credErr.message);
+  }
 
   let creds = credRow?.creds || null;
 
-  // تسجيل للتشخيص (بدون كشف الأسرار)
-  if (creds) {
-    const fieldTypes = {};
-    for (const [k, v] of Object.entries(creds)) {
-      if (v === null) fieldTypes[k] = "null";
-      else if (v === undefined) fieldTypes[k] = "undefined";
-      else if (Buffer.isBuffer(v)) fieldTypes[k] = `Buffer(${v.length})`;
-      else if (v instanceof Uint8Array) fieldTypes[k] = `Uint8Array(${v.length})`;
-      else if (typeof v === "object" && v.constructor && v.constructor.name === "Object") fieldTypes[k] = "Object";
-      else if (Array.isArray(v)) fieldTypes[k] = `Array(${v.length})`;
-      else fieldTypes[k] = typeof v;
-    }
-    console.log(`[auth-store] ${botId}: loaded creds - registered=${creds.registered}, hasMe=${!!creds.me?.id}, fields=${JSON.stringify(fieldTypes)}`);
-  }
-
-  // نبدأ من صفر فقط عندما تكون creds تالفة فعلياً أو مُفقَدة، وليس عندما تكون مجرد حالة
-  // اقتران غير مسجلة. الحالة `registered=false` طبيعية في Baileys وتُستخدم أثناء الطلب
-  // أو إنشاء زوج الاقتران، لذلك لا نحذفها.
   if (!isResumableSession(creds)) {
     if (creds) {
-      console.log(`[auth-store] ${botId}: malformed creds detected; resetting auth state`);
+      console.log(`[auth-store][${botId}] resetting malformed session state`);
       await supabase.from("bot_auth").delete().eq("bot_id", botId);
       await supabase.from("bot_keys").delete().eq("bot_id", botId);
       creds = null;
-    } else {
-      console.log(`[auth-store] ${botId} no creds, will initialize fresh`);
     }
     creds = initAuthCreds();
-    console.log(`[auth-store] ${botId}: initialized fresh creds - keys=${Object.keys(creds).join(',')}`);
+    console.log(`[auth-store][${botId}] initialized fresh auth creds`);
     await supabase.from("bot_auth").upsert({
       bot_id: botId,
       creds: deepBufferSafe(creds),
@@ -149,6 +178,7 @@ export async function createSupabaseAuthStore(botId) {
     });
   }
 
+  // Pre-load keys into memory
   const { data: keysRows } = await supabase
     .from("bot_keys")
     .select("category, key_id, data")
@@ -156,7 +186,7 @@ export async function createSupabaseAuthStore(botId) {
     .limit(50000);
 
   const keysByCategory = new Map();
-  for (const r of (keysRows || [])) {
+  for (const r of keysRows || []) {
     if (!keysByCategory.has(r.category)) keysByCategory.set(r.category, new Map());
     keysByCategory.get(r.category).set(r.key_id, deepFromBufferSafe(r.data));
   }
@@ -190,6 +220,7 @@ export async function createSupabaseAuthStore(botId) {
       }
       return result;
     },
+
     async set(data) {
       for (const [category, idMap] of Object.entries(data)) {
         if (!keysByCategory.has(category)) keysByCategory.set(category, new Map());
@@ -208,42 +239,88 @@ export async function createSupabaseAuthStore(botId) {
               category,
               key_id: keyId,
               data: deepBufferSafe(value),
+              updated_at: new Date().toISOString(),
             });
           }
         }
 
         if (toDelete.length > 0) {
-          await supabase
-            .from("bot_keys")
-            .delete()
-            .eq("bot_id", botId)
-            .eq("category", category)
-            .in("key_id", toDelete);
+          try {
+            await supabase
+              .from("bot_keys")
+              .delete()
+              .eq("bot_id", botId)
+              .eq("category", category)
+              .in("key_id", toDelete);
+          } catch (err) {
+            console.warn(`[auth-store][${botId}] key delete error:`, err?.message || err);
+          }
         }
+
         if (toUpsert.length > 0) {
-          await supabase.from("bot_keys").upsert(toUpsert);
+          try {
+            await supabase
+              .from("bot_keys")
+              .upsert(toUpsert);
+          } catch (err) {
+            console.warn(`[auth-store][${botId}] key upsert error:`, err?.message || err);
+          }
         }
       }
     },
+
     async remove(category, ids) {
       const catMap = keysByCategory.get(category);
       if (ids && ids.length) {
         if (catMap) {
           for (const id of ids) catMap.delete(id);
         }
-        await supabase.from("bot_keys").delete().eq("bot_id", botId).eq("category", category).in("key_id", ids);
+        try {
+          await supabase
+            .from("bot_keys")
+            .delete()
+            .eq("bot_id", botId)
+            .eq("category", category)
+            .in("key_id", ids);
+        } catch (err) {
+          console.warn(`[auth-store][${botId}] remove error:`, err?.message || err);
+        }
       } else if (category) {
         keysByCategory.delete(category);
-        await supabase.from("bot_keys").delete().eq("bot_id", botId).eq("category", category);
+        try {
+          await supabase
+            .from("bot_keys")
+            .delete()
+            .eq("bot_id", botId)
+            .eq("category", category);
+        } catch (err) {
+          console.warn(`[auth-store][${botId}] remove category error:`, err?.message || err);
+        }
       } else {
         keysByCategory.clear();
-        await supabase.from("bot_keys").delete().eq("bot_id", botId);
+        try {
+          await supabase
+            .from("bot_keys")
+            .delete()
+            .eq("bot_id", botId);
+        } catch (err) {
+          console.warn(`[auth-store][${botId}] clear keys error:`, err?.message || err);
+        }
       }
     },
+
     async clear() {
       keysByCategory.clear();
-      await supabase.from("bot_keys").delete().eq("bot_id", botId);
+      try {
+        await supabase
+          .from("bot_keys")
+          .delete()
+          .eq("bot_id", botId);
+      } catch (err) {
+        console.warn(`[auth-store][${botId}] clear error:`, err?.message || err);
+      }
     },
+
     async transaction(work) {
       return await work();
     },
@@ -251,21 +328,87 @@ export async function createSupabaseAuthStore(botId) {
 
   authState.keys = keysStore;
 
-  const saveCreds = async (newCreds) => {
-    if (newCreds && typeof newCreds === "object") {
-      Object.assign(authState.creds, newCreds);
+  let closed = false;
+  let saveTimer = null;
+  let isSaving = false;
+  let pendingSave = false;
+
+  const doSave = async () => {
+    if (closed) return;
+    if (isSaving) {
+      pendingSave = true;
+      return;
     }
+    isSaving = true;
     try {
-      // Buffers → JSON آمن (base64) قبل الحفظ في Supabase
-      await supabase
-        .from("bot_auth")
-        .upsert({ bot_id: botId, creds: deepBufferSafe(authState.creds), updated_at: new Date().toISOString() });
+      if (closed) return;
+      const payload = deepBufferSafe(authState.creds);
+      await supabase.from("bot_auth").upsert({
+        bot_id: botId,
+        creds: payload,
+        updated_at: new Date().toISOString(),
+      });
     } catch (err) {
-      console.error(`[auth-store] Failed to save creds for ${botId}:`, err.message);
+      console.warn(`[auth-store][${botId}] debounced save error (will retry):`, err.message);
+    } finally {
+      isSaving = false;
+      if (pendingSave && !closed) {
+        pendingSave = false;
+        setTimeout(doSave, 300);
+      }
     }
   };
 
-  return { state: authState, saveCreds };
+  const saveCreds = async (newCreds) => {
+    if (closed) return;
+    if (newCreds && typeof newCreds === "object") {
+      Object.assign(authState.creds, newCreds);
+    }
+    if (authState.creds?.registered) {
+      if (saveTimer) clearTimeout(saveTimer);
+      await doSave();
+      return;
+    }
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(doSave, 300);
+  };
+
+  const clearStore = async () => {
+    closed = true;
+    if (saveTimer) clearTimeout(saveTimer);
+    pendingSave = false;
+    activeSavers.delete(botId);
+    try {
+      await supabase.from("bot_auth").delete().eq("bot_id", botId);
+      await supabase.from("bot_keys").delete().eq("bot_id", botId);
+    } catch (err) {
+      console.warn(`[auth-store][${botId}] clearStore error:`, err?.message || err);
+    }
+  };
+
+  const saver = {
+    flush: async () => {
+      if (closed) return;
+      if (saveTimer) clearTimeout(saveTimer);
+      await doSave();
+    },
+    destroy: () => {
+      closed = true;
+      if (saveTimer) clearTimeout(saveTimer);
+      pendingSave = false;
+      activeSavers.delete(botId);
+    },
+  };
+
+  activeSavers.set(botId, saver);
+
+  return {
+    state: authState,
+    saveCreds,
+    flushCreds: saver.flush,
+    destroyStore: saver.destroy,
+    clearStore,
+  };
 }
 
-export { hasValidCreds };
+export { hasValidCreds, isResumableSession };

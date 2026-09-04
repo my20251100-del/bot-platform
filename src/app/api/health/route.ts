@@ -2,25 +2,66 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdmin } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
+  const startTime = Date.now();
   try {
     const admin = createAdmin();
-    const { error } = await admin.from("bots").select("id").limit(1);
-    const database = error ? "disconnected" : "connected";
-    // يمكن إضافة فحص ENGINE URL إن وُجد متغير ENGINE_URL
-    const engineConfigured = !!process.env.ENGINE_URL;
-    const engine = engineConfigured ? "configured" : "not_configured";
+
+    // 1. Database Health Check & Latency
+    const { data: bots, error: dbErr } = await admin
+      .from("bots")
+      .select("id, status, command, updated_at")
+      .limit(100);
+
+    const dbLatencyMs = Date.now() - startTime;
+    const databaseStatus = dbErr ? "down" : "healthy";
+
+    // 2. Metrics from Database
+    const totalBots = bots?.length || 0;
+    const connectedBots = bots?.filter((b) => b.status === "connected").length || 0;
+    const pendingBots = bots?.filter((b) => b.status === "pending").length || 0;
+    const activeCommandBots = bots?.filter((b) => b.command === "start").length || 0;
+
+    // 3. Process & Memory Metrics
+    const memUsage = process.memoryUsage();
+    const memory = {
+      rssMb: Math.round(memUsage.rss / (1024 * 1024)),
+      heapUsedMb: Math.round(memUsage.heapUsed / (1024 * 1024)),
+      heapTotalMb: Math.round(memUsage.heapTotal / (1024 * 1024)),
+    };
+
+    const overallStatus = databaseStatus === "healthy" ? "healthy" : "degraded";
 
     return NextResponse.json({
-      status: database === "connected" ? "ok" : "degraded",
-      database,
-      engine,
+      status: overallStatus,
+      uptimeSeconds: Math.floor(process.uptime()),
       timestamp: new Date().toISOString(),
+      database: {
+        status: databaseStatus,
+        latencyMs: dbLatencyMs,
+        error: dbErr ? dbErr.message : null,
+      },
+      bots: {
+        total: totalBots,
+        connected: connectedBots,
+        pending: pendingBots,
+        activeWanted: activeCommandBots,
+      },
+      system: {
+        memory,
+        nodeVersion: process.version,
+        platform: process.platform,
+      },
     });
-  } catch (e: any) {
+  } catch (err: any) {
     return NextResponse.json(
-      { status: "error", database: "disconnected", engine: "unknown", error: e.message },
+      {
+        status: "unhealthy",
+        error: err.message || "Health check failed",
+        timestamp: new Date().toISOString(),
+      },
       { status: 500 }
     );
   }

@@ -1208,7 +1208,7 @@ async function startSession(bot, version) {
             cfg.autoReactStatus === true ||
             cfg.interactStatus === true ||
             (cfg.autoReactStatus !== false && cfg.interactStatus !== false);
-          const statusEmoji = cfg.reactEmoji || "❤️";
+          const statusEmoji = cfg.reactEmoji || "💚";
 
           console.log(
             `[status] processing from ${actor} type=${contentKey} view=${shouldView} react=${shouldReact ? statusEmoji : "off"}`

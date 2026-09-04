@@ -105,28 +105,34 @@ export default function BotConnect({ initial }: { initial: BotRow }) {
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border/60 pb-5">
         <div className="flex items-center gap-3">
           {isLinked ? (
-            <span
-              className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                bot.status === "connected"
-                  ? "bg-emerald-500/15 text-emerald-400"
-                  : "bg-red-500/15 text-red-400"
-              }`}
-            >
-              {bot.status === "connected" ? "متصل ✓" : "غير متصل"}
-            </span>
+            bot.status === "connected" ? (
+              <span className="flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/15 px-3 py-1 text-xs font-bold text-emerald-400">
+                <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                متصل 24/7 ✓
+              </span>
+            ) : bot.command === "start" ? (
+              <span className="flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/15 px-3 py-1 text-xs font-bold text-amber-400">
+                <span className="h-2 w-2 rounded-full bg-amber-400 animate-ping" />
+                جارٍ إعادة الاتصال التلقائي...
+              </span>
+            ) : (
+              <span className="rounded-full border border-zinc-700 bg-zinc-800/40 px-3 py-1 text-xs font-bold text-zinc-400">
+                متوقف مؤقتاً
+              </span>
+            )
           ) : isPending ? (
-            <span className="flex items-center gap-2 rounded-full bg-amber-500/15 px-3 py-1 text-xs font-semibold text-amber-400">
-              <span className="h-2 w-2 rounded-full bg-amber-400 animate-ping" />
-              بانتظار الربط بالواتساب...
+            <span className="flex items-center gap-2 rounded-full border border-cyan-500/30 bg-cyan-500/15 px-3 py-1 text-xs font-bold text-cyan-400">
+              <span className="h-2 w-2 rounded-full bg-cyan-400 animate-ping" />
+              بانتظار إدخال كود الواتساب...
             </span>
           ) : (
-            <span className="rounded-full bg-zinc-500/15 px-3 py-1 text-xs font-semibold text-zinc-400">
+            <span className="rounded-full border border-zinc-700 bg-zinc-800/40 px-3 py-1 text-xs font-bold text-zinc-400">
               غير مربوط بعد
             </span>
           )}
 
           {bot.linked_number && (
-            <span dir="ltr" className="text-sm font-mono text-muted">
+            <span dir="ltr" className="text-sm font-mono text-accent">
               +{bot.linked_number}
             </span>
           )}

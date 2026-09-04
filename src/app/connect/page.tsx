@@ -28,7 +28,14 @@ const statusLabels: Record<string, string> = {
 const LINK_TIMEOUT_MS = 180_000;
 
 export default function ConnectPage() {
-  const [number, setNumber] = useState("");
+  const [number, setNumber] = useState(() => {
+    if (typeof window !== "undefined") {
+      const sp = new URLSearchParams(window.location.search);
+      const p = sp.get("phone") || sp.get("number");
+      return p ? p.replace(/\D/g, "") : "";
+    }
+    return "";
+  });
   const [botName, setBotName] = useState("");
   const [step, setStep] = useState<"input" | "linking" | "connected" | "error">("input");
   const [bot, setBot] = useState<BotState | null>(null);
@@ -39,17 +46,6 @@ export default function ConnectPage() {
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // قراءة الرقم من الرابط ?phone= أو ?number=
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const sp = new URLSearchParams(window.location.search);
-      const p = sp.get("phone") || sp.get("number");
-      if (p) {
-        setNumber(p.replace(/\D/g, ""));
-      }
-    }
-  }, []);
 
   // عداد تنازلي لصلاحية الكود
   useEffect(() => {

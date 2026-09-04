@@ -19,6 +19,9 @@ if [ ! -d "node_modules" ]; then
     npm install --omit=dev
 fi
 
+# تطبيق تصحيح بروتوكول Baileys لضمان عدم حدوث خطأ 401 عند الاقتران
+sed -i 's/if (!creds.me)/if (!creds.me || !creds.registered)/g' node_modules/@whiskeysockets/baileys/lib/Socket/socket.js 2>/dev/null || true
+
 # حلقة تكرار لضمان إعادة التشغيل التلقائي إذا انقطع النت
 while true; do
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] جاري تشغيل المحرك..."

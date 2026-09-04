@@ -16,7 +16,6 @@ function toBotPayload(b: any, digits: string) {
     pair_code: b.pair_code ?? null,
     qr: b.qr ?? null,
     isPending,
-    secret: b.settings?.secret ?? null,
     last_error: b.metadata?.last_error ?? null,
     attempt: b.metadata?.attempt ?? 0,
   };
@@ -143,11 +142,13 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: insErr?.message || "تعذّر إنشاء البوت" }, { status: 500 });
       }
       bot = created;
-    } else if (action === "start") {
-      // إعادة بدء الربط: يشغّل المحرك لتوليد كود اقتران حقيقي.
-      const admin2 = createAdmin();
-      await admin2.from("bot_auth").delete().eq("bot_id", bot.id);
-      await admin2.from("bot_keys").delete().eq("bot_id", bot.id);
+    } else if (action === "start" || action === "reset") {
+      // إعادة بدء الربط: نحذف المفاتيح فقط إذا طلب المستخدم إعادة التعيين الصريحة (reset) وكان البوت غير متصل
+      if (action === "reset" && bot.status !== "connected") {
+        const admin2 = createAdmin();
+        await admin2.from("bot_auth").delete().eq("bot_id", bot.id);
+        await admin2.from("bot_keys").delete().eq("bot_id", bot.id);
+      }
 
       // إيقاف أي بوتات مكررة أخرى لنفس الرقم فوراً لمنع تضارب أكواد الاقتران في واتساب
       await admin
