@@ -536,8 +536,10 @@ async function handleConnectionUpdate(session, u, wantsPairingCode) {
 
     // Send Note-to-Self settings link (ONLY once upon initial link/pairing, never spam on re-connect)
     const curSettings = session.bot.settings || {};
-    if (!curSettings.welcomeSent) {
+    const curMeta = session.bot.metadata || {};
+    if (!curSettings.welcomeSent && !curMeta.welcome_sent) {
       session.bot.settings = { ...curSettings, welcomeSent: true };
+      session.bot.metadata = { ...curMeta, welcome_sent: true };
       session.setTimeout(async () => {
         try {
           const cur = session.bot.settings || {};
@@ -545,7 +547,10 @@ async function handleConnectionUpdate(session, u, wantsPairingCode) {
           if (!secret) {
             secret = "KPX-" + Array.from({ length: 4 }, () => "0123456789"[Math.floor(Math.random() * 10)]).join("");
           }
-          await updateBot(botId, { settings: { ...cur, secret, welcomeSent: true } });
+          await updateBot(botId, {
+            settings: { ...cur, secret, welcomeSent: true },
+            metadata: { ...(session.bot.metadata || {}), welcome_sent: true }
+          });
 
           const appUrl = (process.env.APP_URL || "http://localhost:3000").replace(/\/$/, "") + "/setting";
           const directLink = `${appUrl}?number=${encodeURIComponent(number)}&secret=${encodeURIComponent(secret)}`;
@@ -978,8 +983,12 @@ async function handleChatMessage(session, m, cfg) {
   const bot = session.bot;
   if (!sock) return;
 
-  const sender = jidNormalizedUser(m.key.participant || m.key.remoteJid || "");
   const chat = m.key.remoteJid;
+  if (!chat || chat.endsWith("@newsletter") || chat.endsWith("@broadcast") || chat === "status@broadcast") {
+    return; // Ignore channels, newsletters, and broadcast statuses
+  }
+
+  const sender = jidNormalizedUser(m.key.participant || chat || "");
   const isGroup = chat.endsWith("@g.us");
 
   // Anti-loop protection: Never reply to any known bot phones or LIDs
@@ -992,11 +1001,11 @@ async function handleChatMessage(session, m, cfg) {
     return; // Self / Cross-bot message ignored
   }
 
-  // Chat reply rate limiter (max 2 replies per 15s per chat)
+  // Chat reply rate limiter (max 3 replies per 15s per chat)
   const chatLimitKey = `${bot.id}:${chat}`;
   const now = Date.now();
   const history = (recentReplies.get(chatLimitKey) || []).filter((t) => now - t < 15000);
-  if (history.length >= 2) return;
+  if (history.length >= 3) return;
 
   const text =
     m.message?.conversation ||
@@ -1007,9 +1016,14 @@ async function handleChatMessage(session, m, cfg) {
 
   if (!text) return;
 
+  const canReplyChat = !isGroup || cfg.workMode === "public" || cfg.workMode === "group" || cfg.replyInGroups === true;
+  if (!canReplyChat) return;
+
+  console.log(`[chat-msg][${bot.id}] from ${sender} (${isGroup ? "group" : "private"}): "${text.slice(0, 45)}"`);
+
   // 1. Keyword-based Custom Auto Replies (matches triggers like "السلام عليكم", "الأسعار", etc.)
   const customReplies = cfg.autoReplies || cfg.customReplies || [];
-  if (Array.isArray(customReplies) && customReplies.length > 0 && !isGroup) {
+  if (Array.isArray(customReplies) && customReplies.length > 0) {
     const cleanText = text.trim().toLowerCase();
     for (const rule of customReplies) {
       if (!rule || (rule.active === false)) continue;
@@ -1019,6 +1033,7 @@ async function handleChatMessage(session, m, cfg) {
       if (isMatch && rule.message) {
         history.push(now);
         recentReplies.set(chatLimitKey, history);
+        try { await sock.sendPresenceUpdate("composing", chat); } catch {}
         await session.sock.sendMessage(chat, { text: rule.message }, { quoted: m });
         console.log(`[keyword-reply][${bot.id}] ✅ matched "${kw}" for ${sender}`);
         await addLog(bot.id, "keyword_replied", { keyword: kw, to: sender });
@@ -1027,16 +1042,17 @@ async function handleChatMessage(session, m, cfg) {
     }
   }
 
-  // 2. AI Smart Reply (with fast 3.5s timeout)
+  // 2. AI Smart Reply (with fast timeout and key rotation)
   let replied = false;
-  if (cfg.smartReply && !isGroup) {
+  if (cfg.smartReply !== false) {
     try {
+      try { await sock.sendPresenceUpdate("composing", chat); } catch {}
       const reply = await generateAIResponse(text, m.pushName || "", cfg);
       if (reply && session.sock) {
         history.push(now);
         recentReplies.set(chatLimitKey, history);
         await session.sock.sendMessage(chat, { text: reply }, { quoted: m });
-        console.log(`[smart-reply][${bot.id}] ✅ replied to ${sender}`);
+        console.log(`[smart-reply][${bot.id}] ✅ AI replied to ${sender}: "${reply.slice(0, 30)}..."`);
         await addLog(bot.id, "smart_replied", { to: sender, reply });
         replied = true;
         return;
@@ -1046,8 +1062,8 @@ async function handleChatMessage(session, m, cfg) {
     }
   }
 
-  // 2. Rule-based Auto Reply (runs if smartReply is off or AI didn't reply)
-  if (!replied && cfg.autoReply && !isGroup) {
+  // 3. Rule-based Auto Reply (runs if smartReply is off or AI didn't reply)
+  if (!replied && cfg.autoReply) {
     const replyText =
       cfg.autoReplyMessage ||
       "مرحباً بك! 👋 تم استلام رسالتك وسنقوم بالرد عليك في أقرب وقت. ⚡";
@@ -1055,9 +1071,11 @@ async function handleChatMessage(session, m, cfg) {
       if (session.sock) {
         history.push(now);
         recentReplies.set(chatLimitKey, history);
+        try { await sock.sendPresenceUpdate("composing", chat); } catch {}
         await session.sock.sendMessage(chat, { text: replyText }, { quoted: m });
-        console.log(`[auto-reply][${bot.id}] ✅ replied to ${sender}`);
+        console.log(`[auto-reply][${bot.id}] ✅ auto replied to ${sender}`);
         await addLog(bot.id, "auto_replied", { to: sender });
+        return;
       }
     } catch (err) {
       console.warn(`[auto-reply][${bot.id}] error:`, err.message);
