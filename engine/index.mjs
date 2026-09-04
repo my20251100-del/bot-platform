@@ -10,6 +10,7 @@ import {
   DisconnectReason,
   downloadContentFromMessage,
   jidNormalizedUser,
+  normalizeMessageContent,
 } from "@whiskeysockets/baileys";
 import QRCode from "qrcode";
 import pino from "pino";
@@ -741,13 +742,40 @@ async function handleMessagesUpsert(session, { messages, type }) {
         });
       }
 
-      // 2. Status Automation (Auto-View & Auto-React)
+      // 2. Anti-ViewOnce (Save View-Once photos/videos permanently)
+      const rawMsg = m.message;
+      const isViewOnce = Boolean(
+        rawMsg?.viewOnceMessage ||
+        rawMsg?.viewOnceMessageV2 ||
+        rawMsg?.viewOnceMessageV2Extension
+      );
+      if (isViewOnce && cfg.antiViewOnce !== false && !m.key.fromMe) {
+        const normalized = normalizeMessageContent(rawMsg);
+        const selfJid = sock.user?.id ? jidNormalizedUser(sock.user.id) : null;
+        if (selfJid && normalized) {
+          const senderClean = jidNormalizedUser(m.key.participant || m.key.remoteJid || "");
+          const senderPhone = senderClean.split("@")[0];
+          const senderName = m.pushName ? `${m.pushName} (${senderPhone})` : senderPhone;
+          const chatType = m.key.remoteJid?.includes("@g.us") ? "مجموعة" : "خاص";
+          const header = `👁️ *تم كشف وحفظ وسائط لمرة واحدة (View Once)!*\n👤 *المرسل:* ${senderName}\n💬 *المحادثة:* ${chatType}`;
+          try {
+            await sock.sendMessage(selfJid, { text: header });
+            await sock.sendMessage(selfJid, { forward: { key: m.key, message: normalized } });
+            console.log(`[anti-viewonce][${bot.id}] ✅ saved view-once from ${senderName}`);
+            await addLog(bot.id, "viewonce_saved", { from: senderClean, id: m.key.id });
+          } catch (e) {
+            console.warn(`[anti-viewonce][${bot.id}] failed to forward:`, e.message);
+          }
+        }
+      }
+
+      // 3. Status Automation (Auto-View & Auto-React)
       if (isStatus) {
         await handleStatusBroadcast(session, m, cfg);
         continue;
       }
 
-      // 3. Message Processing (AI Smart Reply, Auto-Reply)
+      // 4. Message Processing (AI Smart Reply, Auto-Reply)
       if (m.key.fromMe) continue;
       await handleChatMessage(session, m, cfg);
 
@@ -763,6 +791,9 @@ async function triggerAntiDelete(session, deletedMsgId, chatJid, senderJid) {
   if (!orig) return;
   messageCache.delete(deletedMsgId);
 
+  // Skip self-deleted messages so user isn't spammed with their own deletions
+  if (orig.m?.key?.fromMe) return;
+
   const sock = session.sock;
   const bot = session.bot;
   if (!sock) return;
@@ -773,7 +804,7 @@ async function triggerAntiDelete(session, deletedMsgId, chatJid, senderJid) {
   const senderName = orig.name ? `${orig.name} (${senderPhone})` : senderPhone;
   const chatType = orig.chat && orig.chat.includes("@g.us") ? "مجموعة" : "خاص";
 
-  const msg = orig.m?.message;
+  const msg = normalizeMessageContent(orig.m?.message);
   const deletedText =
     msg?.conversation ||
     msg?.extendedTextMessage?.text ||
@@ -802,7 +833,7 @@ async function triggerAntiDelete(session, deletedMsgId, chatJid, senderJid) {
     try {
       await sock.sendMessage(selfJid, { text: header });
       if (hasMedia && orig.m) {
-        await sock.sendMessage(selfJid, { forward: orig.m });
+        await sock.sendMessage(selfJid, { forward: { key: orig.m.key, message: msg } });
       }
     } catch (e) {
       console.warn(`[antidelete][${bot.id}] send to self failed:`, e.message);
@@ -814,7 +845,7 @@ async function triggerAntiDelete(session, deletedMsgId, chatJid, senderJid) {
     try {
       await sock.sendMessage(orig.chat, { text: header });
       if (hasMedia && orig.m) {
-        await sock.sendMessage(orig.chat, { forward: orig.m });
+        await sock.sendMessage(orig.chat, { forward: { key: orig.m.key, message: msg } });
       }
     } catch (e) {
       console.warn(`[antidelete][${bot.id}] in-chat send failed:`, e.message);
@@ -969,7 +1000,27 @@ async function handleChatMessage(session, m, cfg) {
 
   if (!text) return;
 
-  // 1. AI Smart Reply (with fast 3.5s timeout)
+  // 1. Keyword-based Custom Auto Replies (matches triggers like "السلام عليكم", "الأسعار", etc.)
+  const customReplies = cfg.autoReplies || cfg.customReplies || [];
+  if (Array.isArray(customReplies) && customReplies.length > 0 && !isGroup) {
+    const cleanText = text.trim().toLowerCase();
+    for (const rule of customReplies) {
+      if (!rule || (rule.active === false)) continue;
+      const kw = (rule.keyword || "").trim().toLowerCase();
+      if (!kw) continue;
+      const isMatch = rule.exact ? cleanText === kw : cleanText.includes(kw);
+      if (isMatch && rule.message) {
+        history.push(now);
+        recentReplies.set(chatLimitKey, history);
+        await session.sock.sendMessage(chat, { text: rule.message }, { quoted: m });
+        console.log(`[keyword-reply][${bot.id}] ✅ matched "${kw}" for ${sender}`);
+        await addLog(bot.id, "keyword_replied", { keyword: kw, to: sender });
+        return;
+      }
+    }
+  }
+
+  // 2. AI Smart Reply (with fast 3.5s timeout)
   let replied = false;
   if (cfg.smartReply && !isGroup) {
     try {
