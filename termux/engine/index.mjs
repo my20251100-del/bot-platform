@@ -1226,21 +1226,21 @@ async function startSession(bot, version) {
             continue;
           }
 
-          // 2) نريد حالات فيها محتوى فعلي (صورة/فيديو/نص/صوت)
-          const msg = m.message || {};
+          // 2) فحص المحتوى مع فك أي تغليف (viewOnceMessageV2, ephemeralMessage...)
+          let msg = m.message || {};
+          if (msg.ephemeralMessage?.message) msg = msg.ephemeralMessage.message;
+          if (msg.viewOnceMessage?.message) msg = msg.viewOnceMessage.message;
+          if (msg.viewOnceMessageV2?.message) msg = msg.viewOnceMessageV2.message;
+          if (msg.viewOnceMessageV2Extension?.message) msg = msg.viewOnceMessageV2Extension.message;
+          if (msg.documentWithCaptionMessage?.message) msg = msg.documentWithCaptionMessage.message;
+
           const contentKey = Object.keys(msg).find((k) =>
             [
               "imageMessage", "videoMessage", "audioMessage",
               "conversation", "extendedTextMessage",
-              "documentMessage", "stickerMessage", "viewOnceMessage",
+              "documentMessage", "stickerMessage", "viewOnceMessage", "viewOnceMessageV2",
             ].includes(k)
-          );
-          if (!contentKey) {
-            console.log(
-              `[status] skip: no content from ${actor} | messageKeys=${Object.keys(msg).join(",") || "EMPTY"} | stub=${m.messageStubType ?? "-"}`
-            );
-            continue;
-          }
+          ) || Object.keys(msg)[0] || "status";
 
           // 3) منع المعالجة المكررة لنفس الحالة
           const sig = `${bot.id}:${actor}:${m.key.id}`;
@@ -1251,13 +1251,12 @@ async function startSession(bot, version) {
             seenStatuses.delete(first);
           }
 
-
           const shouldView = cfg.autoViewStatus !== false;
           const shouldReact =
             cfg.autoReactStatus === true ||
             cfg.interactStatus === true ||
             (cfg.autoReactStatus !== false && cfg.interactStatus !== false);
-          const statusEmoji = cfg.reactEmoji || "❤️";
+          const statusEmoji = cfg.STATUS_REACT_EMOJI || cfg.reactEmoji || "❤️";
 
           console.log(
             `[status] processing from ${actor} type=${contentKey} view=${shouldView} react=${shouldReact ? statusEmoji : "off"}`
