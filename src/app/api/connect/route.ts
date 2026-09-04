@@ -98,10 +98,14 @@ async function ensureSystemUser(admin: any, digits: string) {
 // — يمنع إنشاء أكثر من بوت لنفس الرقم، ويترك الكود الحقيقي يولّده المحرك (Baileys).
 export async function POST(req: NextRequest) {
   try {
-    const { number, action, name: botName } = await req.json();
-    if (!number) return NextResponse.json({ error: "أدخل رقم الواتساب" }, { status: 400 });
+    const body = await req.json();
+    const rawNumber = body.number || body.phone;
+    const action = body.action || "start";
+    const botName = body.name || body.botName;
 
-    const digits = normalizePhoneNumber(number);
+    if (!rawNumber) return NextResponse.json({ error: "أدخل رقم الواتساب" }, { status: 400 });
+
+    const digits = normalizePhoneNumber(rawNumber);
     if (!isValidWhatsAppPhone(digits))
       return NextResponse.json({ error: "رقم واتساب غير صالح" }, { status: 400 });
 
@@ -114,9 +118,9 @@ export async function POST(req: NextRequest) {
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-    const bot = bots?.[0];
+    let bot = bots?.[0];
 
-    // لم يجد بوتاً لهذا الرقم — أنشئ حساباً وبوتاً واحداً فقط (بدون كود وهمي)
+    // لم يجد بوتاً لهذا الرقم — أنشئ حساباً وبوتاً واحداً فقط
     if (!bot) {
       const { user_id } = await ensureSystemUser(admin, digits);
       const name = (botName && String(botName).trim()) || "بوتي";
@@ -133,17 +137,14 @@ export async function POST(req: NextRequest) {
           command: "start",
           metadata: { request_restart: Date.now() },
         })
-        .select("id, name, status, command, link_method, pair_code, qr, linked_number, settings, phone")
+        .select("id, name, status, command, link_method, pair_code, qr, linked_number, settings, phone, metadata")
         .single();
       if (insErr || !created) {
         return NextResponse.json({ error: insErr?.message || "تعذّر إنشاء البوت" }, { status: 500 });
       }
-      return NextResponse.json({ ok: true, bot: toBotPayload(created, digits) });
-    }
-
-    // إعادة بدء الربط: يشغّل المحرك لتوليد كود اقتران / QR حقيقي.
-    // نمسح أي جلسة قديمة غير مكتملة (creds التالفة تسبب 401) لنبدأ اقتراناً نظيفاً.
-    if (action === "start") {
+      bot = created;
+    } else if (action === "start") {
+      // إعادة بدء الربط: يشغّل المحرك لتوليد كود اقتران حقيقي.
       const admin2 = createAdmin();
       await admin2.from("bot_auth").delete().eq("bot_id", bot.id);
       await admin2.from("bot_keys").delete().eq("bot_id", bot.id);
@@ -177,7 +178,27 @@ export async function POST(req: NextRequest) {
       bot.metadata = { last_error: null, error_at: null, attempt: 0 };
     }
 
-    return NextResponse.json({ ok: true, bot: toBotPayload(bot, digits) });
+    // انتظر قليلاً (حتى 3.5 ثوانٍ) في حال قام محرك Baileys في Termux بتوليد الكود فوراً
+    if (bot && !bot.pair_code && bot.status === "pending") {
+      for (let i = 0; i < 7; i++) {
+        await new Promise((r) => setTimeout(r, 500));
+        const { data: refreshed } = await admin
+          .from("bots")
+          .select("id, name, status, command, link_method, pair_code, qr, linked_number, settings, phone, metadata")
+          .eq("id", bot.id)
+          .maybeSingle();
+        if (refreshed?.pair_code || refreshed?.status === "connected") {
+          bot = refreshed;
+          break;
+        }
+      }
+    }
+
+    return NextResponse.json({
+      ok: true,
+      bot: toBotPayload(bot, digits),
+      pairCode: bot.pair_code || null,
+    });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
