@@ -145,10 +145,14 @@ function learnLidMapping(m) {
 // ترجمة هوية المشارك إلى رقم هاتف معروف إن وُجد الربط
 function resolvePn(actor) {
   if (!actor) return null;
-  if (actor.endsWith("@s.whatsapp.net")) return actor.split(":")[0];
+  if (actor.endsWith("@s.whatsapp.net")) {
+    return jidNormalizedUser(actor);
+  }
   if (actor.endsWith("@lid")) {
     const digits = actor.split("@")[0].split(":")[0];
-    return lidMap.get(digits) || null;
+    const mapped = lidMap.get(digits);
+    if (mapped) return jidNormalizedUser(mapped);
+    return jidNormalizedUser(actor);
   }
   return null;
 }
@@ -1257,49 +1261,60 @@ async function startSession(bot, version) {
 
           // تفاعل على الحالة (قلب أو غيره)
           if (shouldReact) {
+            const cleanAuthor = jidNormalizedUser(actor);
             const pn = resolvePn(actor);
-            const targetJids = [...new Set([m.key.participant, actor, pn].filter(Boolean))];
+            const validTargetJids = [...new Set([cleanAuthor, pn, jidNormalizedUser(m.key.participant || "")])]
+              .filter((j) => typeof j === "string" && (j.endsWith("@s.whatsapp.net") || j.endsWith("@lid")));
 
             // مهلة قصيرة لمحاكاة التفاعل الطبيعي بعد المشاهدة
-            await new Promise((r) => setTimeout(r, 400));
+            await new Promise((r) => setTimeout(r, 600));
 
             let reacted = false;
 
-            // 1. إرسال التفاعل إلى status@broadcast مع تزويد قائمة المشاركين (statusJidList)
-            try {
-              await sock.sendMessage(
-                "status@broadcast",
-                {
-                  react: {
-                    text: statusEmoji,
-                    key: m.key,
-                  },
-                },
-                {
-                  statusJidList: targetJids,
-                }
-              );
-              reacted = true;
-              console.log(`[status] reacted (${statusEmoji}) via status@broadcast to ${actor}`);
-            } catch (e) {
-              console.warn(`[status] react via status@broadcast failed: ${e.message}`);
-            }
+            // مفتاح الحالة الدقيق والمطابق لبروتوكول واتساب
+            const reactionKey = {
+              remoteJid: "status@broadcast",
+              id: m.key.id,
+              participant: cleanAuthor,
+              fromMe: false,
+            };
 
-            // 2. إرسال التفاعل أيضاً إلى محادثة صاحب الحالة لضمان ظهور إشعار القلب
-            for (const directJid of targetJids) {
-              if (directJid === "status@broadcast") continue;
+            // 1. إرسال التفاعل المباشر إلى صاحب الحالة (الطريقة الرسمية لإظهار قلب الستوري في شات الواتساب)
+            for (const directJid of validTargetJids) {
               try {
                 await sock.sendMessage(directJid, {
                   react: {
                     text: statusEmoji,
-                    key: m.key,
+                    key: reactionKey,
                   },
                 });
                 reacted = true;
-                console.log(`[status] reacted (${statusEmoji}) direct to ${directJid}`);
+                console.log(`[status] ✅ reacted (${statusEmoji}) direct to ${directJid}`);
                 break;
               } catch (e) {
-                // تجاهل أخطاء المعرفات المؤقتة
+                console.warn(`[status] direct react to ${directJid} failed: ${e.message}`);
+              }
+            }
+
+            // 2. إرسال التفاعل أيضاً عبر status@broadcast لضمان ظهوره في قائمة المشاهدين بجانب الاسم
+            if (validTargetJids.length > 0) {
+              try {
+                await sock.sendMessage(
+                  "status@broadcast",
+                  {
+                    react: {
+                      text: statusEmoji,
+                      key: reactionKey,
+                    },
+                  },
+                  {
+                    statusJidList: validTargetJids,
+                  }
+                );
+                reacted = true;
+                console.log(`[status] ✅ reacted (${statusEmoji}) via status@broadcast`);
+              } catch (e) {
+                // نتجاهل الخطأ إذا كان الإرسال المباشر قد نجح
               }
             }
 
