@@ -586,16 +586,20 @@ async function handleConnectionClose(session, error) {
     session.sock?.authState?.creds?.registered || session.bot.linked_number
   );
 
-  // 1. Permanent Logged Out
-  if (category === DisconnectCategory.LOGGED_OUT) {
-    console.log(`[WA][${botId}] Logged out permanently by WhatsApp.`);
+  // 1. Permanent Logged Out OR 401 Disconnect
+  if (category === DisconnectCategory.LOGGED_OUT || code === 401) {
+    console.log(
+      `[WA][${botId}] ${
+        isRegistered ? "Logged out permanently by WhatsApp." : "401 Connection Failure during initial pairing."
+      }`
+    );
     if (typeof session.clearStore === "function") {
       await session.clearStore();
     } else {
       await supabase.from("bot_auth").delete().eq("bot_id", botId);
       await supabase.from("bot_keys").delete().eq("bot_id", botId);
     }
-    await session.destroy("logged_out");
+    await session.destroy(isRegistered ? "logged_out" : "pairing_failed_401");
     activeSessions.delete(botId);
 
     await updateBot(botId, {
@@ -604,9 +608,12 @@ async function handleConnectionClose(session, error) {
       linked_number: null,
       pair_code: null,
       qr: null,
-      metadata: { last_error: "logged_out", error_at: new Date().toISOString() },
+      metadata: {
+        last_error: isRegistered ? "logged_out" : "pairing_failed_401",
+        error_at: new Date().toISOString(),
+      },
     });
-    await addLog(botId, "logged_out", { code, reason: reasonTag });
+    await addLog(botId, isRegistered ? "logged_out" : "pairing_failed_401", { code, reason: reasonTag });
     return;
   }
 
@@ -1058,46 +1065,60 @@ async function handleChatMessage(session, m, cfg) {
   }
 }
 
-// AI Response Generator (Gemini with fast 3.5s timeout and validation)
+// AI Response Generator (Gemini with fast timeout, multi-key rotation and validation)
 async function generateAIResponse(userText, senderName, cfg) {
-  const geminiKeys = cfg.geminiKeys || [];
-  const key = geminiKeys[0] || process.env.GEMINI_API_KEY;
-  if (!key || typeof key !== "string" || !key.startsWith("AIzaSy")) {
-    return null; // Not a valid Gemini key, skip immediately to prevent 60s blocking
+  const rawKeys = Array.isArray(cfg.geminiKeys) ? cfg.geminiKeys : [];
+  const geminiKeys = rawKeys.filter(
+    (k) => typeof k === "string" && (k.startsWith("AIzaSy") || k.startsWith("AQ."))
+  );
+  if (
+    process.env.GEMINI_API_KEY &&
+    (process.env.GEMINI_API_KEY.startsWith("AIzaSy") || process.env.GEMINI_API_KEY.startsWith("AQ."))
+  ) {
+    if (!geminiKeys.includes(process.env.GEMINI_API_KEY)) {
+      geminiKeys.push(process.env.GEMINI_API_KEY);
+    }
+  }
+
+  if (geminiKeys.length === 0) {
+    return null; // Not a valid Gemini key, skip immediately
   }
 
   const systemPrompt =
     (cfg.geminiSystemPrompt || "أنت مساعد ذكي ولطيف، تجيب باختصار وعفوية وباللهجة الطبيعية بدون تكلف.") +
     (senderName ? `\nاسم المتحدث: ${senderName}` : "");
 
-  let chosenModel = cfg.geminiModel || "gemini-1.5-flash";
-  if (chosenModel.includes("3.5") || chosenModel.includes("2.5") || chosenModel.includes("latest")) {
-    chosenModel = "gemini-1.5-flash";
+  let chosenModel = cfg.geminiModel || "gemini-flash-latest";
+  if (!chosenModel || chosenModel.includes("1.5") || chosenModel.includes("2.5")) {
+    chosenModel = "gemini-flash-latest";
   }
 
-  try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${chosenModel}:generateContent?key=${encodeURIComponent(key)}`;
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: systemPrompt }] },
-        contents: [{ role: "user", parts: [{ text: String(userText).slice(0, 1500) }] }],
-        generationConfig: { maxOutputTokens: 300 },
-      }),
-      signal: AbortSignal.timeout(3500),
-    });
+  for (const key of geminiKeys) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${chosenModel}:generateContent?key=${encodeURIComponent(key)}`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          contents: [{ role: "user", parts: [{ text: String(userText).slice(0, 1500) }] }],
+          generationConfig: { maxOutputTokens: 300 },
+        }),
+        signal: AbortSignal.timeout(4500),
+      });
 
-    if (!res.ok) {
-      console.warn(`[gemini] model ${chosenModel} returned status ${res.status}`);
-      return null;
+      if (!res.ok) {
+        console.warn(`[gemini] key ${key.slice(0, 12)}... model ${chosenModel} returned status ${res.status}`);
+        continue;
+      }
+      const data = await res.json();
+      const reply = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+      if (reply) return reply;
+    } catch (err) {
+      console.warn(`[gemini] key ${key.slice(0, 12)}... error:`, err.message);
     }
-    const data = await res.json();
-    return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || null;
-  } catch (err) {
-    console.warn(`[gemini] model ${chosenModel} fetch error:`, err.message);
-    return null;
   }
+  return null;
 }
 
 // Call Rejection Handler

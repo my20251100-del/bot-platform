@@ -191,7 +191,11 @@ export async function createSupabaseAuthStore(botId) {
     keysByCategory.get(r.category).set(r.key_id, deepFromBufferSafe(r.data));
   }
 
-  const authState = { creds: deepFromBufferSafe(creds), keys: null };
+  const loadedCreds = deepFromBufferSafe(creds);
+  if (loadedCreds && !loadedCreds.registered && loadedCreds.me) {
+    delete loadedCreds.me;
+  }
+  const authState = { creds: loadedCreds, keys: null };
 
   const keysStore = {
     async get(category, ids) {
@@ -343,6 +347,9 @@ export async function createSupabaseAuthStore(botId) {
     try {
       if (closed) return;
       const payload = deepBufferSafe(authState.creds);
+      if (payload && !authState.creds?.registered && payload.me) {
+        delete payload.me;
+      }
       await supabase.from("bot_auth").upsert({
         bot_id: botId,
         creds: payload,
