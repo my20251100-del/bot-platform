@@ -74,7 +74,6 @@ export default function CreateBotForm({ hasBot = false }: { hasBot?: boolean }) 
       return setError(insErr?.message || "تعذّر إنشاء البوت");
     }
 
-    // تنظيف أي تضارب مع أرقام قديمة وبدء المحرك
     try {
       await fetch("/api/bot/action", {
         method: "POST",
@@ -92,7 +91,6 @@ export default function CreateBotForm({ hasBot = false }: { hasBot?: boolean }) 
 
     setLoading(false);
     setOpen(false);
-    setName("");
     setPhone("");
     router.push(`/dashboard/bots/${newBot.id}`);
     router.refresh();
