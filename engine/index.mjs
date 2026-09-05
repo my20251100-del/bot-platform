@@ -1106,8 +1106,27 @@ async function generateAIResponse(userText, senderName, cfg) {
     return null; // Not a valid Gemini key, skip immediately
   }
 
+  const messageText = String(userText || "").trim();
+  const messageWordCount = messageText.split(/\s+/).filter(Boolean).length;
+  const isAskingDetail = /تفصيل|اشرح|وضح|ماهي خطوات|كيف يعمل/i.test(messageText);
+
+  let lengthInstruction = "";
+  let targetMaxTokens = 60;
+
+  if (messageWordCount <= 3) {
+    targetMaxTokens = 20;
+    lengthInstruction = "توجيه قطعي صارم: رسالة المستخدم قصيرة جداً (تحية أو كلمة أو كلمتين). يجب أن يكون ردك كلمة إلى 3 كلمات فقط (مثل: أهلاً بك!، وعليكم السلام، حياك الله، أبشر). ممنوع نهائياً كتابة فقرة أو فتح موضوع.";
+  } else if (!isAskingDetail) {
+    targetMaxTokens = 60;
+    lengthInstruction = "توجيه إلزامي (هات الزبدة فوراً): أجب في صلب الموضوع ومباشرة بدون أي لف أو دوران وبدون مقدمات، سطر أو سطرين كحد أقصى كأي شخص يكتب بسرعة في واتساب. ممنوع الإطالة أو الحشو.";
+  } else {
+    targetMaxTokens = 120;
+    lengthInstruction = "أجب باختصار وترتيب، ركز على الزبدة والمفيد وتجنب الإطالة.";
+  }
+
   const systemPrompt =
-    (cfg.geminiSystemPrompt || "أنت مساعد ذكي ولطيف، تجيب باختصار وعفوية وباللهجة الطبيعية بدون تكلف.") +
+    (cfg.geminiSystemPrompt || "أنت شخص حقيقي صاحب هذا الرقم، تجيب بعفوية وباللهجة الطبيعية بدون تكلف.") +
+    `\n\n${lengthInstruction}\n` +
     (senderName ? `\nاسم المتحدث: ${senderName}` : "");
 
   // Candidate models in priority order:
@@ -1130,7 +1149,7 @@ async function generateAIResponse(userText, senderName, cfg) {
           body: JSON.stringify({
             systemInstruction: { parts: [{ text: systemPrompt }] },
             contents: [{ role: "user", parts: [{ text: String(userText).slice(0, 1500) }] }],
-            generationConfig: { maxOutputTokens: 300 },
+            generationConfig: { maxOutputTokens: targetMaxTokens },
           }),
           signal: AbortSignal.timeout(4500),
         });

@@ -63,6 +63,26 @@ export async function POST(req: NextRequest) {
 
     try {
       await admin.from("profiles").update({ phone_verified: true }).eq("id", usr.id);
+
+      const appUrl = (process.env.APP_URL || "https://bot-platform-delta.vercel.app").replace(/\/$/, "");
+      const welcomeMsg = 
+`🎉 *أهلاً بك في منصة بوت برو!*
+
+تم تأكيد حسابك بنجاح. يمكنك الآن الدخول إلى لوحة التحكم والبدء في ربط بوتك وإعداد الأتمتة:
+
+🔗 *رابط لوحة التحكم:*
+${appUrl}/dashboard
+
+🚀 *رابط ربط البوت المباشر (كود الاقتران):*
+${appUrl}/bot/create
+
+(بيانات الدخول هي بريدك الإلكتروني وكلمة المرور التي أنشأتها)`;
+
+      await admin.from("notify_queue").insert({
+        to_number: digits,
+        message: welcomeMsg,
+        status: "pending",
+      });
     } catch {}
 
     logOtpEvent("signup_verified_success", { userId: usr.id.slice(0, 8), phoneLength: digits.length });
