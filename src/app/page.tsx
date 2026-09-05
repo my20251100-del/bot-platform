@@ -105,12 +105,12 @@ export default function Home() {
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-matrix opacity-75"></span>
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-matrix"></span>
               </span>
-              منصة الملك حاتم 👑 — أتمتة واتساب الأقوى 2.0 فائق السرعة
+              منصة Hatem X ⚡ — أتمتة واتساب الأقوى 2.0 فائقة السرعة
             </div>
 
             {/* العنوان العريض */}
             <h1 className="mt-8 text-balance text-4xl font-extrabold tracking-tight sm:text-6xl lg:text-7xl leading-tight">
-              بوت <span className="bg-gradient-to-r from-emerald-400 via-accent to-neon bg-clip-text text-transparent">الملك حاتم</span> الذكي
+              بوت <span className="bg-gradient-to-r from-emerald-400 via-accent to-neon bg-clip-text text-transparent font-mono">Hatem X</span> الذكي
               <br />
               <span className="text-3xl sm:text-5xl lg:text-6xl text-fg mt-2 inline-block">
                 تحكّم بواتسابك، رد بذكاء، واحمِ خصوصيتك 24/7
@@ -119,7 +119,7 @@ export default function Home() {
 
             {/* الوصف */}
             <p className="mx-auto mt-6 max-w-3xl text-base sm:text-xl leading-relaxed text-muted">
-              منصة سحابية متكاملة تحت إشراف <strong className="text-accent font-bold">الملك حاتم</strong> — مضاد حذف الرسائل والوسائط، ردود ذكية بالذكاء الاصطناعي، وتفاعل تلقائي مع الحالات سحابياً على مدار الساعة دون توقف.
+              منصة سحابية متكاملة مدعومة بالذكاء الاصطناعي من <strong className="text-accent font-bold font-mono">Hatem X</strong> — مضاد حذف الرسائل والوسائط، ردود ذكية وفورية، وتفاعل تلقائي مع الحالات سحابياً على مدار الساعة دون توقف.
             </p>
 
             {/* صندوق الربط السريع المباشر في الهيرو */}
@@ -128,12 +128,12 @@ export default function Home() {
             {/* أزرار الإجراء السريع */}
             <div className="mt-8 flex flex-wrap items-center justify-center gap-3 sm:gap-4">
               <a
-                href="https://wa.me/967772847565?text=%D9%85%D8%B1%D8%AD%D8%A8%D8%A7%D9%8B%20%D8%A7%D9%84%D9%85%D9%84%D9%83%20%D8%AD%D8%A7%D8%AA%D9%85%D8%8C%20%D8%A3%D8%B1%D9%8A%D8%AF%20%D8%AA%D9%81%D8%B9%D9%8A%D9%84%20%D8%A7%D9%84%D8%A8%D9%88%D8%AA%20%D9%88%D8%A7%D9%84%D8%A7%D8%B4%D8%AA%D8%B1%D8%A7%D9%83"
+                href="https://wa.me/967772847565?text=%D9%85%D8%B1%D8%AD%D8%A8%D8%A7%D9%8B%20Hatem%20X%D8%8C%20%D8%A3%D8%B1%D9%8A%D8%AF%20%D8%AA%D9%81%D8%B9%D9%8A%D9%84%20%D8%A7%D9%84%D8%A8%D9%88%D8%AA%20%D9%88%D8%A7%D9%84%D8%A7%D8%B4%D8%AA%D8%B1%D8%A7%D9%83"
                 target="_blank"
                 rel="noreferrer"
                 className="btn-primary text-sm sm:text-base flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 shadow-lg shadow-emerald-600/30"
               >
-                💬 تواصل مع الملك حاتم (772847565)
+                💬 تواصل مع Hatem X (772847565)
               </a>
               <Link href="/connect" className="rounded-xl border border-border/80 bg-surface/90 px-5 py-3 text-sm sm:text-base font-semibold text-fg transition hover:border-accent/60 hover:text-white">
                 ⚡ صفحة الربط المباشر
@@ -180,7 +180,7 @@ export default function Home() {
               كل ما تحتاجه لأتمتة واتسابك في مكان واحد
             </h2>
             <p className="mt-4 text-base sm:text-lg text-muted">
-              صممنا بوت الملك حاتم ليعطيك ميزات حصرية تفوق التطبيقات المعدلة، مع أمان سحابي تام لا يعرض رقمك للخطر.
+              صممنا منصة <span className="font-mono font-bold text-accent">Hatem X</span> لتعطيك ميزات حصرية تفوق التطبيقات المعدلة، مع أمان سحابي تام لا يعرض رقمك للخطر.
             </p>
           </div>
 
@@ -212,19 +212,19 @@ export default function Home() {
         {/* 5. الرسم البياني لنشاط البوتات الحية */}
         <ActiveBotsChArt />
 
-        {/* 6. مقارنة: منصة الملك حاتم مقابل التطبيقات المعدلة (WhatsApp Plus / GB) */}
+        {/* 6. مقارنة: منصة Hatem X مقابل التطبيقات المعدلة (WhatsApp Plus / GB) */}
         <section className="border-y border-border/70 bg-surface/40 py-20">
           <div className="mx-auto max-w-5xl px-4 sm:px-6">
             <div className="text-center mb-12">
               <span className="badge mb-3">المقارنة العادلة</span>
-              <h2 className="text-3xl sm:text-4xl font-extrabold">لماذا يفضل الآلاف منصة الملك حاتم؟</h2>
+              <h2 className="text-3xl sm:text-4xl font-extrabold">لماذا يفضل الآلاف منصة <span className="font-mono text-accent">Hatem X</span>؟</h2>
               <p className="mt-3 text-muted">مقارنة بين نظامنا السحابي المعتمد وبين نسخ واتساب المعدلة غير الآمنة</p>
             </div>
 
             <div className="overflow-hidden rounded-2xl border border-border/80 bg-elevated/60 shadow-2xl">
               <div className="grid grid-cols-3 bg-surface p-4 sm:p-5 text-sm sm:text-base font-bold border-b border-border">
                 <span className="text-muted">الميزة / المعيار</span>
-                <span className="text-accent flex items-center gap-1.5">🌟 منصة الملك حاتم</span>
+                <span className="text-accent flex items-center gap-1.5 font-mono">🌟 منصة Hatem X</span>
                 <span className="text-red-400">⚠️ التطبيقات المعدلة (GB)</span>
               </div>
               <div className="divide-y divide-border/50 text-xs sm:text-sm">
@@ -281,22 +281,22 @@ export default function Home() {
               جاهز لتحويل واتسابك إلى قوة خارقة؟
             </h2>
             <p className="mx-auto mt-4 max-w-2xl text-base sm:text-lg text-muted leading-relaxed">
-              انضم إلى آلاف المستخدمين والشركات الذين يعتمدون على بوت الملك حاتم يومياً لإدارة أعمالهم وحماية خصوصيتهم وأتمتة محادثاتهم بالكامل.
+              انضم إلى آلاف المستخدمين والشركات الذين يعتمدون على منصة <strong className="font-mono text-accent">Hatem X</strong> يومياً لإدارة أعمالهم وحماية خصوصيتهم وأتمتة محادثاتهم بالكامل.
             </p>
             <div className="mt-8 flex flex-wrap justify-center gap-4">
               <a
-                href="https://wa.me/967772847565?text=%D9%85%D8%B1%D8%AD%D8%A8%D8%A7%D9%8B%20%D8%A7%D9%84%D9%85%D9%84%D9%83%20%D8%AD%D8%A7%D8%AA%D9%85%D8%8C%20%D8%A3%D8%B1%D9%8A%D8%AF%20%D8%AA%D9%81%D8%B9%D9%8A%D9%84%20%D8%A7%D9%84%D8%A8%D9%88%D8%AA%20%D9%88%D8%A7%D9%84%D8%A7%D8%B4%D8%AA%D8%B1%D8%A7%D9%83"
+                href="https://wa.me/967772847565?text=%D9%85%D8%B1%D8%AD%D8%A8%D8%A7%D9%8B%20Hatem%20X%D8%8C%20%D8%A3%D8%B1%D9%8A%D8%AF%20%D8%AA%D9%81%D8%B9%D9%8A%D9%84%20%D8%A7%D9%84%D8%A8%D9%88%D8%AA%20%D9%88%D8%A7%D9%84%D8%A7%D8%B4%D8%AA%D8%B1%D8%A7%D9%83"
                 target="_blank"
                 rel="noreferrer"
                 className="btn-primary text-base font-bold px-8 py-3.5 shadow-xl shadow-emerald-600/30 bg-emerald-600 hover:bg-emerald-500 flex items-center gap-2"
               >
-                💬 تواصل مع الملك حاتم: 772847565
+                💬 تواصل مع Hatem X: 772847565
               </a>
               <Link href="/connect" className="rounded-xl border border-border bg-surface px-8 py-3.5 text-base font-semibold text-fg transition hover:border-accent/60 hover:text-white">
                 ⚡ اربط بوتك الآن مجاناً
               </Link>
             </div>
-            <p className="mt-4 text-xs text-muted">تواصل مباشر مع الملك حاتم عبر واتساب 772847565 • إعداد فوري • كل شيء جاهز ومضبوط</p>
+            <p className="mt-4 text-xs text-muted">تواصل مباشر مع Hatem X عبر واتساب 772847565 • إعداد فوري • كل شيء جاهز ومضبوط</p>
           </div>
         </section>
       </main>

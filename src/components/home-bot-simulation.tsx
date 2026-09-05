@@ -66,7 +66,7 @@ export default function HomeBotSimulation() {
               <div className="flex items-start justify-end gap-3">
                 <div className="rounded-2xl rounded-tl-none bg-gradient-to-br from-emerald-950/80 to-accent/20 border border-accent/40 p-4 text-sm text-fg shadow-lg max-w-md">
                   <div className="flex items-center justify-between gap-3 text-xs mb-1">
-                    <span className="font-bold text-accent">🤖 بوت الملك حاتم (استجابة في 0.08 ثانية)</span>
+                    <span className="font-bold text-accent">🤖 بوت Hatem X (استجابة في 0.08 ثانية)</span>
                     <span className="text-emerald-400 text-[11px]">✓✓ مقروءة</span>
                   </div>
                   <p className="leading-relaxed">

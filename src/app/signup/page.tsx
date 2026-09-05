@@ -25,8 +25,8 @@ export default function SignupPage() {
               </div>
             </div>
             <div className="mt-8 text-center">
-              <h2 className="text-2xl font-bold">الملك حاتم <span className="text-accent">PRO</span></h2>
-              <p className="mt-2 max-w-xs text-sm text-muted">أتمتة وحماية واتساب الذكية — تفاعلات، مضاد حذف، ومساعد ذكاء اصطناعي في مكان واحد.</p>
+              <h2 className="text-2xl font-bold font-mono">Hatem <span className="text-accent">X</span></h2>
+              <p className="mt-2 max-w-xs text-sm text-muted">أتمتة وحماية واتساب الذكية عبر منصة Hatem X — تفاعلات، مضاد حذف، ومساعد ذكاء اصطناعي في مكان واحد.</p>
             </div>
           </div>
         </div>

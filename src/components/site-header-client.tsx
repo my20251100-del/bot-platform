@@ -27,8 +27,8 @@ export default function SiteHeaderClient({ user }: SiteHeaderClientProps) {
               <path d="M2 8h3l2 5" /><path d="M21 8h-3l-1.5-3.5" /><path d="M3 3l18 18" />
             </svg>
           </span>
-          <span className="text-xl font-bold tracking-tight cyber-title">
-            الملك حاتم <span className="text-accent">PRO</span>
+          <span className="text-xl font-bold tracking-tight cyber-title font-mono">
+            Hatem <span className="text-accent">X</span>
           </span>
         </Link>
 
