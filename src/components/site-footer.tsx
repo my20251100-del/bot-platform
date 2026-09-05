@@ -99,7 +99,8 @@ export default function SiteFooter() {
       </div>
 
       <div className="border-t border-border/60 py-6 text-center text-xs text-muted">
-        © {new Date().getFullYear()} بوت برو — جميع الحقوق محفوظة. غير تابع لواتساب أو ميتا.
+        <p className="mb-2">© {new Date().getFullYear()} بوت برو — جميع الحقوق محفوظة. غير تابع لواتساب أو ميتا.</p>
+        <p className="font-semibold text-accent/80">تطوير: محمد حاتم | للتواصل: 772847565 (واتساب)</p>
       </div>
     </footer>
   );

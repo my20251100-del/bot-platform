@@ -71,12 +71,15 @@ export default async function DashboardLayout({
       <div className="min-w-0 flex-1 px-4 pb-28 pt-20 sm:px-8 md:pb-10 md:pt-10">{children}</div>
       </div>
 
-      {/* تذييل سايبور بنك */}
       <footer className="border-t border-border/60 py-6">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-4 text-center text-xs text-muted sm:flex-row sm:text-left">
-          <div className="flex items-center gap-2 font-semibold">
-            <span className="text-accent">🤖</span>
-            <span>بوت برو — منصة أتمتة بوتات واتساب</span>
+          <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-6 font-semibold">
+            <span className="flex items-center gap-2">
+              <span className="text-accent">🤖</span>
+              <span>بوت برو — منصة أتمتة بوتات واتساب</span>
+            </span>
+            <span className="hidden sm:inline text-border/40">|</span>
+            <span className="text-accent/80 font-bold">تطوير: محمد حاتم - 772847565</span>
           </div>
           <div className="flex items-center gap-4">
             <span className="flex items-center gap-1.5">
