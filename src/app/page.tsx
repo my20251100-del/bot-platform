@@ -109,16 +109,20 @@ export default function Home() {
             </div>
 
             {/* العنوان العريض */}
-            <h1 className="mt-8 text-balance text-4xl font-extrabold tracking-tight sm:text-6xl lg:text-7xl">
-              تحكّم بواتسابك، رد بذكاء،{" "}
-              <span className="bg-gradient-to-r from-accent via-neon to-fuchsia-400 bg-clip-text text-transparent">
-                واحمِ خصوصيتك 24/7
+            <h1 className="mt-8 text-balance text-4xl font-extrabold tracking-tight sm:text-6xl lg:text-7xl leading-tight">
+              التواصل مع صاحب البوت{" "}
+              <span className="bg-gradient-to-r from-emerald-400 via-accent to-neon bg-clip-text text-transparent font-mono">
+                772847565
+              </span>
+              <br />
+              <span className="text-3xl sm:text-5xl lg:text-6xl text-fg mt-2 inline-block">
+                واتس وكل شيء عليه 🚀
               </span>
             </h1>
 
             {/* الوصف */}
             <p className="mx-auto mt-6 max-w-3xl text-base sm:text-xl leading-relaxed text-muted">
-              اربط رقمك في <strong className="text-fg">10 ثوانٍ فقط</strong> بكود الاقتران. ردود فورية بالذكاء الاصطناعي، مضاد حذف الرسائل، مشاهدة الحالات التلقائية، وجدولة النشر — كل ذلك سحابياً بدون الحاجة لبقاء هاتفك متصلاً بالإنترنت!
+              تواصل مباشرة مع صاحب البوت عبر واتساب على الرقم <strong className="text-emerald-400 font-mono">772847565</strong> لتفعيل البوت وضبط الإعدادات والردود التلقائية بالذكاء الاصطناعي — كل شيء جاهز ومضبوط لك سحابياً 24/7!
             </p>
 
             {/* صندوق الربط السريع المباشر في الهيرو */}
@@ -126,12 +130,17 @@ export default function Home() {
 
             {/* أزرار الإجراء السريع */}
             <div className="mt-8 flex flex-wrap items-center justify-center gap-3 sm:gap-4">
-              <Link href="/connect" className="btn-primary text-sm sm:text-base">
+              <a
+                href="https://wa.me/967772847565?text=%D9%85%D8%B1%D8%AD%D8%A8%D8%A7%D9%8B%20%D8%B5%D8%A7%D8%AD%D8%A8%20%D8%A7%D9%84%D8%A8%D9%88%D8%AA%D8%8C%20%D8%A3%D8%B1%D9%8A%D8%AF%20%D8%AA%D9%81%D8%B9%D9%8A%D9%84%20%D8%A7%D9%84%D8%A8%D9%88%D8%AA%20%D9%88%D9%83%D9%84%20%D8%B4%D9%8A%D8%A1%20%D8%B9%D9%84%D9%8A%D9%83"
+                target="_blank"
+                rel="noreferrer"
+                className="btn-primary text-sm sm:text-base flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 shadow-lg shadow-emerald-600/30"
+              >
+                💬 تواصل واتساب مع صاحب البوت (772847565)
+              </a>
+              <Link href="/connect" className="rounded-xl border border-border/80 bg-surface/90 px-5 py-3 text-sm sm:text-base font-semibold text-fg transition hover:border-accent/60 hover:text-white">
                 ⚡ صفحة الربط المباشر
               </Link>
-              <a href="#features" className="rounded-xl border border-border/80 bg-surface/90 px-5 py-3 text-sm sm:text-base font-semibold text-fg transition hover:border-accent/60 hover:text-white">
-                استكشف المميزات ↓
-              </a>
               <Link href="/login" className="rounded-xl border border-border/80 bg-elevated/70 px-5 py-3 text-sm sm:text-base font-semibold text-muted transition hover:border-accent/40 hover:text-white">
                 دخول المشتركين 👤
               </Link>
@@ -278,14 +287,19 @@ export default function Home() {
               انضم إلى آلاف المستخدمين والشركات الذين يعتمدون على بوت برو يومياً لإدارة أعمالهم وحماية خصوصيتهم وأتمتة محادثاتهم بالكامل.
             </p>
             <div className="mt-8 flex flex-wrap justify-center gap-4">
-              <Link href="/connect" className="btn-primary text-base font-bold px-8 py-3.5 shadow-xl shadow-accent/30">
+              <a
+                href="https://wa.me/967772847565?text=%D9%85%D8%B1%D8%AD%D8%A8%D8%A7%D9%8B%20%D8%B5%D8%A7%D8%AD%D8%A8%20%D8%A7%D9%84%D8%A8%D9%88%D8%AA%D8%8C%20%D8%A3%D8%B1%D9%8A%D8%AF%20%D8%AA%D9%81%D8%B9%D9%8A%D9%84%20%D8%A7%D9%84%D8%A8%D9%88%D8%AA%20%D9%88%D9%83%D9%84%20%D8%B4%D9%8A%D8%A1%20%D8%B9%D9%84%D9%8A%D9%83"
+                target="_blank"
+                rel="noreferrer"
+                className="btn-primary text-base font-bold px-8 py-3.5 shadow-xl shadow-emerald-600/30 bg-emerald-600 hover:bg-emerald-500 flex items-center gap-2"
+              >
+                💬 تواصل واتساب مع صاحب البوت: 772847565
+              </a>
+              <Link href="/connect" className="rounded-xl border border-border bg-surface px-8 py-3.5 text-base font-semibold text-fg transition hover:border-accent/60 hover:text-white">
                 ⚡ اربط بوتك الآن مجاناً
               </Link>
-              <Link href="/signup" className="rounded-xl border border-border bg-surface px-8 py-3.5 text-base font-semibold text-fg transition hover:border-accent/60 hover:text-white">
-                إنشاء حساب في المنصة
-              </Link>
             </div>
-            <p className="mt-4 text-xs text-muted">بدون بطاقة ائتمان • إعداد فوري في 10 ثوانٍ • مجاني للأبد</p>
+            <p className="mt-4 text-xs text-muted">تواصل مباشر عبر واتساب 772847565 • إعداد فوري • كل شيء جاهز ومضبوط</p>
           </div>
         </section>
       </main>
