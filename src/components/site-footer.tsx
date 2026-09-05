@@ -10,7 +10,7 @@ export default function SiteFooter() {
               <span className="grid h-9 w-9 place-items-center rounded-xl bg-accent text-accent-fg shadow-lg shadow-accent/30">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22.27 21.73 3.53 3a10.62 10.62 0 0 1-1.3 2.32L9 16l1-2-1.7 3.5a10.5 10.5 0 0 0 2.6 3.9h2.2a10.5 10.5 0 0 0 4.9-2.9l.3.3Z" /><path d="M2 8h3l2 5" /><path d="M21 8h-3l-1.5-3.5" /><path d="M3 3l18 18" /></svg>
               </span>
-              <span className="text-xl font-bold tracking-tight cyber-title">بوت برو <span className="text-accent">PRO</span></span>
+              <span className="text-xl font-bold tracking-tight cyber-title">الملك حاتم <span className="text-accent">PRO</span></span>
             </Link>
             <p className="max-w-sm text-sm leading-relaxed text-muted mb-6">
               منصة عضوية مميزة لنمو قنوات واتساب وأتمتة البوتات — تفاعلات، متابعون، محفظة، وإحالات، كل ذلك في مكان واحد.
@@ -99,8 +99,8 @@ export default function SiteFooter() {
       </div>
 
       <div className="border-t border-border/60 py-6 text-center text-xs text-muted">
-        <p className="mb-2">© {new Date().getFullYear()} بوت برو — جميع الحقوق محفوظة. غير تابع لواتساب أو ميتا.</p>
-        <p className="font-semibold text-accent/80">تطوير: محمد حاتم | للتواصل: 772847565 (واتساب)</p>
+        <p className="mb-2">© {new Date().getFullYear()} الملك حاتم — جميع الحقوق محفوظة. غير تابع لواتساب أو ميتا.</p>
+        <p className="font-semibold text-accent/80">تطوير: الملك حاتم (محمد حاتم) | للتواصل: 772847565 (واتساب)</p>
       </div>
     </footer>
   );

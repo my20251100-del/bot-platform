@@ -28,7 +28,7 @@ export default function SiteHeaderClient({ user }: SiteHeaderClientProps) {
             </svg>
           </span>
           <span className="text-xl font-bold tracking-tight cyber-title">
-            بوت برو <span className="text-accent">PRO</span>
+            الملك حاتم <span className="text-accent">PRO</span>
           </span>
         </Link>
 
