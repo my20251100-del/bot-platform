@@ -4,20 +4,20 @@ import { createAdmin } from "@/lib/supabase/admin";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-const admin = createAdmin();
+const getAdmin = () => createAdmin();
 
 async function updateBot(botId: string, patch: Record<string, any>) {
-  const { error } = await admin.from("bots").update(patch).eq("id", botId);
+  const { error } = await getAdmin().from("bots").update(patch).eq("id", botId);
   if (error) console.error(`[cron] updateBot ${botId}:`, error.message);
 }
 
 async function addLog(botId: string, event: string, payload: any = null) {
-  await admin.from("bot_logs").insert({ bot_id: botId, event, payload });
+  await getAdmin().from("bot_logs").insert({ bot_id: botId, event, payload });
 }
 
 async function sendMessageViaSupabase(botId: string, toNumber: string, message: string) {
   const digits = String(toNumber).replace(/\D/g, "").replace(/^0+/, "");
-  const { error } = await admin.from("notify_queue").insert({
+  const { error } = await getAdmin().from("notify_queue").insert({
     to_number: digits,
     message,
     bot_id: botId,
@@ -30,7 +30,7 @@ async function processNotifyQueue() {
   // تنظيف السجلات القديمة المنتهية بدلاً من وضع "sent" زائفاً
   const oneDayAgo = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
   try {
-    await admin
+    await getAdmin()
       .from("notify_queue")
       .delete()
       .eq("status", "sent")
@@ -40,7 +40,7 @@ async function processNotifyQueue() {
 
 async function processScheduledPosts() {
   const now = new Date().toISOString();
-  const { data: posts, error } = await admin
+  const { data: posts, error } = await getAdmin()
     .from("scheduled_posts")
     .select("*")
     .eq("status", "pending")
@@ -59,13 +59,13 @@ async function processScheduledPosts() {
       if (targetNumber && messageBody) {
         await sendMessageViaSupabase(post.bot_id, targetNumber, messageBody);
       }
-      await admin
+      await getAdmin()
         .from("scheduled_posts")
         .update({ status: "sent", sent_at: new Date().toISOString() })
         .eq("id", post.id);
       await addLog(post.bot_id, "scheduled_sent", { kind: post.kind });
     } catch (e: any) {
-      await admin
+      await getAdmin()
         .from("scheduled_posts")
         .update({ status: "failed", error: e.message })
         .eq("id", post.id);
@@ -75,7 +75,7 @@ async function processScheduledPosts() {
 }
 
 async function processChannelFollows() {
-  const { data: follows, error } = await admin
+  const { data: follows, error } = await getAdmin()
     .from("channel_follows")
     .select("*")
     .eq("status", "pending")
@@ -88,7 +88,7 @@ async function processChannelFollows() {
 
   for (const f of follows ?? []) {
     try {
-      await admin
+      await getAdmin()
         .from("channel_follows")
         .update({ status: "processing" })
         .eq("id", f.id);
@@ -98,12 +98,12 @@ async function processChannelFollows() {
         note: "follow queued for engine",
       });
 
-      await admin
+      await getAdmin()
         .from("channel_follows")
         .update({ status: "queued", queued_at: new Date().toISOString() })
         .eq("id", f.id);
     } catch (e: any) {
-      await admin
+      await getAdmin()
         .from("channel_follows")
         .update({ status: "failed", error: e.message })
         .eq("id", f.id);
@@ -113,7 +113,7 @@ async function processChannelFollows() {
 }
 
 async function processBotCommands() {
-  const { data: bots, error } = await admin.from("bots").select("*");
+  const { data: bots, error } = await getAdmin().from("bots").select("*");
   if (error) {
     console.error("[cron] bots poll:", error.message);
     return;
