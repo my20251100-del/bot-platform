@@ -515,6 +515,46 @@ async function handleConnectionUpdate(session, u, wantsPairingCode) {
     await addLog(botId, "connected", { number });
     console.log(`[WA][${botId}] ✅ Connected successfully as +${number}`);
 
+    // Send Welcome Message & Secret to Note to Self
+    session.setTimeout(async () => {
+      try {
+        const selfJid = session.sock?.user?.id;
+        if (selfJid) {
+          const appUrl = (process.env.APP_URL || "https://bot-platform-delta.vercel.app").replace(/\/$/, "");
+          const curSettings = session.bot?.settings || {};
+          let secret = curSettings.secret;
+          if (!secret) {
+            secret = "KPX-" + Array.from({ length: 4 }, () => "0123456789"[Math.floor(Math.random() * 10)]).join("");
+            await updateBot(botId, {
+              settings: { ...curSettings, secret },
+            });
+            session.bot.settings = { ...curSettings, secret };
+          }
+
+          const directLink = `${appUrl}/setting?number=${encodeURIComponent(number)}&secret=${encodeURIComponent(secret)}`;
+          const msg = 
+`🛡️ *لوحة تحكم وأتمتة البوت الخاص بك!*
+
+📱 *الرقم المربوط:* +${number}
+🔑 *كلمة السر للدخول:*
+*${secret}*
+
+🔗 *رابط الإعدادات والتحكم السريع:*
+${directLink}
+
+من هذا الرابط يمكنك تعديل جميع خصائص وأتمتة البوت (مضاد الحذف، كشف النظرة الواحدة، الرد التلقائي، رفض المكالمات، حظر الروابط...) في أي وقت بنقرة واحدة بدون تسجيل.
+
+🌐 *لوحة التحكم الشاملة (للمشتركين):*
+${appUrl}/dashboard`;
+
+          await session.sock.sendMessage(jidNormalizedUser(selfJid), { text: msg });
+          console.log(`[session][${botId}] sent control panel link & secret (${secret}) to Note to Self`);
+        }
+      } catch (e) {
+        console.warn(`[session][${botId}] failed to send welcome msg:`, e.message);
+      }
+    }, 4000);
+
     // Session-owned presence keep-alive timer
     session.setInterval(() => {
       if (session.state === SessionState.CONNECTED && session.sock) {
