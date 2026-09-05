@@ -99,48 +99,72 @@ export default function DashboardLive({
 
       {/* شريط الميزات الفورية النشطة (الحالات، الرسائل، الخصوصية) */}
       <Reveal delay={0.55}>
-        <div className="my-6 rounded-2xl border border-accent/40 bg-surface/90 p-5 shadow-xl backdrop-blur-xl">
-          <div className="flex items-center justify-between border-b border-border/50 pb-3 mb-4">
-            <div className="flex items-center gap-2 font-bold text-base text-fg">
-              <span className="text-xl">⚡</span>
-              <span>الخواص السحابية النشطة في بوتك</span>
+        <div className="my-8 rounded-2xl border border-accent/60 bg-gradient-to-br from-surface/90 to-surface/40 p-6 shadow-[0_0_40px_rgba(0,212,255,0.15)] backdrop-blur-xl relative overflow-hidden">
+          {/* خلفية جمالية */}
+          <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-accent/10 blur-[80px]" />
+          <div className="absolute -left-20 -bottom-20 h-64 w-64 rounded-full bg-matrix/10 blur-[80px]" />
+
+          <div className="relative z-10 flex items-center justify-between border-b border-border/50 pb-4 mb-5">
+            <div className="flex items-center gap-3 font-bold text-lg text-white">
+              <span className="grid h-8 w-8 place-items-center rounded-lg bg-accent/20 text-accent">👑</span>
+              <span>محرك QUEEN الخارق النشط</span>
             </div>
-            <span className="rounded-full bg-matrix/15 px-2.5 py-0.5 text-xs font-bold text-matrix">
-              تعمل 24/7 سحابياً ✓
+            <span className="rounded-full bg-matrix/20 border border-matrix/40 px-3 py-1 text-xs font-bold text-matrix animate-pulse shadow-[0_0_10px_rgba(0,255,65,0.4)]">
+              يعمل بقوة 100% ✓
             </span>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="relative z-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Link
-              href="/dashboard/status-hub"
-              className="group rounded-xl border border-border/70 bg-elevated/50 p-3.5 transition hover:border-accent hover:bg-elevated flex items-center justify-between"
+              href="/dashboard/queen"
+              className="group rounded-xl border border-border/70 bg-elevated/40 p-4 transition-all hover:-translate-y-1 hover:border-accent hover:bg-elevated hover:shadow-[0_0_20px_rgba(0,212,255,0.3)] flex flex-col items-start gap-3"
             >
-              <div className="flex items-center gap-3">
-                <span className="grid h-10 w-10 place-items-center rounded-xl bg-accent/15 text-accent text-xl group-hover:scale-110 transition">
-                  👁️
-                </span>
-                <div>
-                  <h4 className="font-bold text-sm text-fg">مشاهدة الحالات والتفاعل</h4>
-                  <p className="text-xs text-muted mt-0.5">مشاهدة آلية + تفاعل قلوب ❤️</p>
-                </div>
+              <span className="grid h-12 w-12 place-items-center rounded-xl bg-accent/15 text-accent text-2xl group-hover:scale-110 transition-transform shadow-inner">
+                🖼️
+              </span>
+              <div>
+                <h4 className="font-bold text-sm text-white">صانع الملصقات</h4>
+                <p className="text-xs text-muted mt-1 leading-relaxed">أرسل .s لأي صورة لصنع ملصق</p>
               </div>
-              <span className="text-xs text-accent font-semibold">إدارة ←</span>
             </Link>
 
             <Link
-              href="/dashboard/messages"
-              className="group rounded-xl border border-border/70 bg-elevated/50 p-3.5 transition hover:border-matrix hover:bg-elevated flex items-center justify-between"
+              href="/dashboard/queen"
+              className="group rounded-xl border border-border/70 bg-elevated/40 p-4 transition-all hover:-translate-y-1 hover:border-blood hover:bg-elevated hover:shadow-[0_0_20px_rgba(255,50,50,0.3)] flex flex-col items-start gap-3"
             >
-              <div className="flex items-center gap-3">
-                <span className="grid h-10 w-10 place-items-center rounded-xl bg-matrix/15 text-matrix text-xl group-hover:scale-110 transition">
-                  💬
-                </span>
-                <div>
-                  <h4 className="font-bold text-sm text-fg">رسائل العملاء والرد التلقائي</h4>
-                  <p className="text-xs text-muted mt-0.5">استلام الرسائل والردود الذكية</p>
-                </div>
+              <span className="grid h-12 w-12 place-items-center rounded-xl bg-blood/15 text-blood text-2xl group-hover:scale-110 transition-transform shadow-inner">
+                🛡️
+              </span>
+              <div>
+                <h4 className="font-bold text-sm text-white">حماية المجموعات</h4>
+                <p className="text-xs text-muted mt-1 leading-relaxed">طرد، إغلاق، ترحيب تلقائي</p>
               </div>
-              <span className="text-xs text-matrix font-semibold">عرض ←</span>
+            </Link>
+
+            <Link
+              href="/dashboard/status-hub"
+              className="group rounded-xl border border-border/70 bg-elevated/40 p-4 transition-all hover:-translate-y-1 hover:border-emerald-500 hover:bg-elevated hover:shadow-[0_0_20px_rgba(16,185,129,0.3)] flex flex-col items-start gap-3"
+            >
+              <span className="grid h-12 w-12 place-items-center rounded-xl bg-emerald-500/15 text-emerald-400 text-2xl group-hover:scale-110 transition-transform shadow-inner">
+                👁️
+              </span>
+              <div>
+                <h4 className="font-bold text-sm text-white">تفاعل الحالات</h4>
+                <p className="text-xs text-muted mt-1 leading-relaxed">مشاهدة وردود سريعة ذكية</p>
+              </div>
+            </Link>
+
+            <Link
+              href="/dashboard/gemini"
+              className="group rounded-xl border border-border/70 bg-elevated/40 p-4 transition-all hover:-translate-y-1 hover:border-purple-500 hover:bg-elevated hover:shadow-[0_0_20px_rgba(168,85,247,0.3)] flex flex-col items-start gap-3"
+            >
+              <span className="grid h-12 w-12 place-items-center rounded-xl bg-purple-500/15 text-purple-400 text-2xl group-hover:scale-110 transition-transform shadow-inner">
+                🧠
+              </span>
+              <div>
+                <h4 className="font-bold text-sm text-white">فهم الصور والردود</h4>
+                <p className="text-xs text-muted mt-1 leading-relaxed">الذكاء الاصطناعي يحلل كل شيء</p>
+              </div>
             </Link>
           </div>
         </div>

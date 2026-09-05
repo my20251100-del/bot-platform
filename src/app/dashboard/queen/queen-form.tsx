@@ -97,13 +97,46 @@ export default function QueenForm({ botId, initial }: { botId: string; initial: 
       </div>
 
       <div className="space-y-3">
-        <p className="text-sm font-semibold text-muted">الخصوصية والحماية</p>
+      <div className="space-y-3">
+        <p className="text-sm font-semibold text-accent border-b border-accent/20 pb-2">🛡️ حماية وإدارة المجموعات (Admin)</p>
+        <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-border bg-elevated/40 p-3 hover:bg-elevated transition">
+          <div>
+            <span className="font-bold">منع الروابط (Anti-Link)</span>
+            <p className="text-xs text-muted">حذف الروابط تلقائياً</p>
+          </div>
+          <input type="checkbox" checked={initial.antiLink ?? false} onChange={() => {}} disabled />
+          {/* Note: In full implementation, connect these to state */}
+        </label>
+        <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-border bg-elevated/40 p-3 hover:bg-elevated transition">
+          <div>
+            <span className="font-bold">الترحيب التلقائي (Welcome)</span>
+            <p className="text-xs text-muted">إرسال رسالة ترحيب عند انضمام عضو</p>
+          </div>
+          <input type="checkbox" checked={initial.welcomeEnabled ?? false} onChange={() => {}} disabled />
+        </label>
+      </div>
+
+      <div className="space-y-3">
+        <p className="text-sm font-semibold text-purple-400 border-b border-purple-500/20 pb-2">🧠 شخصية الذكاء الاصطناعي</p>
+        <label className="flex flex-col gap-2 rounded-xl border border-border bg-elevated/40 p-3">
+          <span className="font-bold">نغمة الردود (AI Personality)</span>
+          <select className="input" defaultValue="friendly">
+            <option value="friendly">مساعد لطيف وودود (افتراضي)</option>
+            <option value="funny">ساخر ومضحك جداً 🤡</option>
+            <option value="professional">رسمي واحترافي 👔</option>
+            <option value="savage">قاسي ومستفز 🔥</option>
+          </select>
+        </label>
+      </div>
+
+      <div className="space-y-3">
+        <p className="text-sm font-semibold text-muted border-b border-border/50 pb-2">الخصوصية</p>
         <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-border bg-elevated p-3">
-          <span>رفض المكالمات</span>
+          <span>رفض المكالمات التلقائي</span>
           <input type="checkbox" checked={rejectCalls} onChange={(e) => setRejectCalls(e.target.checked)} />
         </label>
         <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-border bg-elevated p-3">
-          <span>إظهار متصل</span>
+          <span>إظهار متصل (Online)</span>
           <input type="checkbox" checked={showOnline} onChange={(e) => setShowOnline(e.target.checked)} />
         </label>
       </div>
