@@ -515,6 +515,20 @@ async function handleConnectionUpdate(session, u, wantsPairingCode) {
     await addLog(botId, "connected", { number });
     console.log(`[WA][${botId}] ✅ Connected successfully as +${number}`);
 
+    // Send Welcome Message to Self
+    session.setTimeout(async () => {
+      try {
+        const selfJid = session.sock?.user?.id;
+        if (selfJid) {
+          const dashUrl = process.env.APP_URL || "https://bot-platform-delta.vercel.app";
+          const msg = `🎉 *تم تشغيل محرك الواتساب بنجاح!*\n\nأهلاً بك! بوتك الآن متصل بالخوادم السحابية ويعمل على مدار الساعة 24/7.\n\n🔗 *لإدارة البوت وتفعيل المميزات (الرد التلقائي، الذكاء الاصطناعي، منع الحذف):*\n${dashUrl}/dashboard\n\n(سجل دخولك بحسابك الذي أنشأته في الموقع)`;
+          await session.sock.sendMessage(jidNormalizedUser(selfJid), { text: msg });
+        }
+      } catch (e) {
+        console.warn(`[session][${botId}] failed to send welcome msg:`, e.message);
+      }
+    }, 5000);
+
     // Session-owned presence keep-alive timer
     session.setInterval(() => {
       if (session.state === SessionState.CONNECTED && session.sock) {
