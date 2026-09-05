@@ -793,8 +793,18 @@ async function handleMessagesUpsert(session, { messages, type }) {
         continue;
       }
 
-      // 4. Message Processing (AI Smart Reply, Auto-Reply)
-      if (m.key.fromMe) continue;
+      // 4. Message Processing (Commands, AI Smart Reply, Auto-Reply)
+      const rawText =
+        m.message?.conversation ||
+        m.message?.extendedTextMessage?.text ||
+        m.message?.imageMessage?.caption ||
+        m.message?.videoMessage?.caption ||
+        "";
+      const isCmd = /^[.!\/]/.test(rawText.trim());
+
+      // If from me, ONLY allow if it is a command like .مجموعاتي or .مشرف
+      if (m.key.fromMe && !isCmd) continue;
+
       await handleChatMessage(session, m, cfg);
 
     } catch (err) {
@@ -997,20 +1007,6 @@ async function handleChatMessage(session, m, cfg) {
   const sender = jidNormalizedUser(m.key.participant || chat || "");
   const isGroup = chat.endsWith("@g.us");
 
-  // Anti-loop protection: Only ignore messages sent by the bot account itself
-  const selfJid = session.sock?.user?.id || "";
-  const selfNumber = (selfJid.split(":")[0] || bot.phone || bot.linked_number || "").replace(/\D/g, "");
-  const senderDigits = sender.split("@")[0].replace(/\D/g, "");
-  if (selfNumber && senderDigits === selfNumber) {
-    return; // Self message ignored
-  }
-
-  // Chat reply rate limiter (max 3 replies per 15s per chat)
-  const chatLimitKey = `${bot.id}:${chat}`;
-  const now = Date.now();
-  const history = (recentReplies.get(chatLimitKey) || []).filter((t) => now - t < 15000);
-  if (history.length >= 3) return;
-
   let text =
     m.message?.conversation ||
     m.message?.extendedTextMessage?.text ||
@@ -1028,7 +1024,23 @@ async function handleChatMessage(session, m, cfg) {
 
   if (!text) return;
 
-  const canReplyChat = !isGroup || cfg.workMode === "public" || cfg.workMode === "group" || cfg.replyInGroups === true;
+  const isCommand = /^[.!\/]/.test(text.trim());
+
+  // Anti-loop protection: Only ignore normal messages sent to self, but ALLOW commands (.مجموعاتي, .مشرف, etc.)
+  const selfJid = session.sock?.user?.id || "";
+  const selfNumber = (selfJid.split(":")[0] || bot.phone || bot.linked_number || "").replace(/\D/g, "");
+  const senderDigits = sender.split("@")[0].replace(/\D/g, "");
+  if (selfNumber && senderDigits === selfNumber && !isCommand) {
+    return; // Self regular chat message ignored to prevent loops
+  }
+
+  // Chat reply rate limiter (max 3 replies per 15s per chat)
+  const chatLimitKey = `${bot.id}:${chat}`;
+  const now = Date.now();
+  const history = (recentReplies.get(chatLimitKey) || []).filter((t) => now - t < 15000);
+  if (history.length >= 3) return;
+
+  const canReplyChat = isCommand || !isGroup || cfg.workMode === "public" || cfg.workMode === "group" || cfg.replyInGroups === true;
   if (!canReplyChat) return;
 
   console.log(`[chat-msg][${bot.id}] from ${sender} (${isGroup ? "group" : "private"}): "${text.slice(0, 45)}"`);

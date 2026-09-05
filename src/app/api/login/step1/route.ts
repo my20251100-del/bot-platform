@@ -16,11 +16,27 @@ export async function POST(req: NextRequest) {
     if (!email || !password)
       return NextResponse.json({ success: false, code: "INVALID_INPUT", message: "أدخل البريد وكلمة المرور" }, { status: 400 });
 
+    let targetEmail = String(email || "").trim();
     const admin = createAdmin();
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
     const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
-    const { error } = await admin.auth.signInWithPassword({ email, password });
+    // إذا تم إدخال رقم هاتف بدلاً من البريد، ابحث عن الحساب المرتبط بهذا الرقم
+    if (!targetEmail.includes("@")) {
+      const cleanDigits = targetEmail.replace(/\D/g, "");
+      const { data: userList } = await admin.auth.admin.listUsers();
+      const matched = userList?.users?.find(
+        (u: any) =>
+          (u.user_metadata?.phone && u.user_metadata.phone.replace(/\D/g, "").includes(cleanDigits)) ||
+          (u.phone && u.phone.replace(/\D/g, "").includes(cleanDigits)) ||
+          (u.email && u.email.includes(cleanDigits))
+      );
+      if (matched?.email) {
+        targetEmail = matched.email;
+      }
+    }
+
+    const { error } = await admin.auth.signInWithPassword({ email: targetEmail, password });
     if (error) {
       return NextResponse.json(
         {
@@ -33,18 +49,18 @@ export async function POST(req: NextRequest) {
     }
 
     const r = await fetch(
-      `${url}/auth/v1/admin/users?email=${encodeURIComponent(email)}`,
+      `${url}/auth/v1/admin/users?email=${encodeURIComponent(targetEmail)}`,
       { headers: { apikey: key, Authorization: `Bearer ${key}` } }
     );
     const list = await r.json();
-    const usr = Array.isArray(list?.users) ? list.users.find((u: any) => u.email === email) : null;
+    const usr = Array.isArray(list?.users) ? list.users.find((u: any) => u.email === targetEmail) : null;
     const phone = normalizePhoneNumber(usr?.user_metadata?.phone || "");
     if (!usr?.id || !phone)
       return NextResponse.json({ success: false, code: "NO_WHATSAPP_PHONE", message: "رقم واتساب غير مسجّل لهذا الحساب" }, { status: 400 });
 
     const code = genOtp();
     const expires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-    console.log(`[AUTH-LOGIN-OTP] Generated code for ${email}: ${code} (expires in 15m)`);
+    console.log(`[AUTH-LOGIN-OTP] Generated code for ${targetEmail}: ${code} (expires in 15m)`);
     logOtpEvent("login_otp_generated", { expiry: expires, purpose: "login", phoneLength: phone.length });
     const meta = usr.user_metadata || {};
 

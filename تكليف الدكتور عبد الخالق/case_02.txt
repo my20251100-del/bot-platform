@@ -1,0 +1,15 @@
+CASE 02
+==================================================
+
+The following ciphertext stream was intercepted.
+Apply forensic analysis to reconstruct the transmission.
+
+--------------------------------------------------
+
+FIWON CNWXA FNVWN ZJTMC LWAPN NAZXV RSTSN LCNAT WUNBC RMVVH
+TSXET AINIM WSVCM ULBNH VSSNG CINNV FLTAM CNNWV WIUNY TLAFF
+WYVRR NAWTW PRHVM CNLLN SNICW VIHNN IPCWU XNLNV RTISC EXOTR
+TRINI APNWL HVMHL INYDW WZZLF KEVOK EMZQG EUTWT ARTEN DZMAL
+WTEUA NNDRT CSWTW DWNUE UFALC FWKAV YAVRW N
+
+--------------------------------------------------

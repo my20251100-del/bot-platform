@@ -1,0 +1,15 @@
+CASE 03
+==================================================
+
+The following ciphertext stream was intercepted.
+Apply forensic analysis to reconstruct the transmission.
+
+--------------------------------------------------
+
+LPGID ZFQAS QSDDQ YIETQ QDQZZ EVEQD AZLGE RNGZU QNLOG HGYQD
+WMGOQ NKPGU UOQJS IEANH GUDWQ AZHEL DANYA FSUUL LGPQH JEFFX
+EKGGN YHZGF QFQBP TGRGO LUACV DEOVQ DKLSK HPQDU QAIXE DQJWQ
+LUDGI PIENZ UGUHL UEMHQ BXAIL VFSLN PDQNQ IPPAD ALILQ PDUCY
+UQLSP GUFZQ LNQDW JGNAE LGEXN LEKCN IUETQ DDLPP QOQHS KEADZ
+
+--------------------------------------------------
