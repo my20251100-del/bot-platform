@@ -985,12 +985,20 @@ async function handleChatMessage(session, m, cfg) {
   const history = (recentReplies.get(chatLimitKey) || []).filter((t) => now - t < 15000);
   if (history.length >= 3) return;
 
-  const text =
+  let text =
     m.message?.conversation ||
     m.message?.extendedTextMessage?.text ||
     m.message?.imageMessage?.caption ||
     m.message?.videoMessage?.caption ||
     "";
+
+  const imageMsg = m.message?.imageMessage;
+  const stickerMsg = m.message?.stickerMessage;
+  const hasMedia = Boolean(imageMsg || stickerMsg);
+
+  if (hasMedia && !text) {
+    text = stickerMsg ? "رد على هذا الملصق بشكل طريف أو مناسب." : "ما رأيك في هذه الصورة؟";
+  }
 
   if (!text) return;
 
@@ -1024,8 +1032,27 @@ async function handleChatMessage(session, m, cfg) {
   let replied = false;
   if (cfg.smartReply !== false) {
     try {
+      let aiMedia = null;
+      if (hasMedia) {
+        try {
+          const type = imageMsg ? 'image' : 'sticker';
+          const msgObj = imageMsg || stickerMsg;
+          const stream = await downloadContentFromMessage(msgObj, type);
+          let buffer = Buffer.from([]);
+          for await (const chunk of stream) {
+            buffer = Buffer.concat([buffer, chunk]);
+          }
+          aiMedia = {
+            data: buffer.toString('base64'),
+            mimeType: msgObj.mimetype || (type === 'image' ? 'image/jpeg' : 'image/webp')
+          };
+        } catch (e) {
+          console.warn(`[media-dl][${bot.id}] failed to download media for AI:`, e.message);
+        }
+      }
+
       try { await sock.sendPresenceUpdate("composing", chat); } catch {}
-      const reply = await generateAIResponse(text, m.pushName || "", cfg);
+      const reply = await generateAIResponse(text, m.pushName || "", cfg, aiMedia);
       if (reply && session.sock) {
         history.push(now);
         recentReplies.set(chatLimitKey, history);
@@ -1062,7 +1089,7 @@ async function handleChatMessage(session, m, cfg) {
 }
 
 // AI Response Generator (Gemini with fast timeout, multi-key rotation and validation)
-async function generateAIResponse(userText, senderName, cfg) {
+async function generateAIResponse(userText, senderName, cfg, aiMedia = null) {
   const rawKeys = Array.isArray(cfg.geminiKeys) ? cfg.geminiKeys : [];
   const geminiKeys = rawKeys.filter(
     (k) => typeof k === "string" && (k.startsWith("AIzaSy") || k.startsWith("AQ."))
@@ -1098,12 +1125,24 @@ async function generateAIResponse(userText, senderName, cfg) {
     for (const key of geminiKeys) {
       try {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
+        
+        const parts = [];
+        if (userText) parts.push({ text: String(userText).slice(0, 1500) });
+        if (aiMedia) {
+          parts.push({
+            inlineData: {
+              mimeType: aiMedia.mimeType,
+              data: aiMedia.data
+            }
+          });
+        }
+
         const res = await fetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             systemInstruction: { parts: [{ text: systemPrompt }] },
-            contents: [{ role: "user", parts: [{ text: String(userText).slice(0, 1500) }] }],
+            contents: [{ role: "user", parts }],
             generationConfig: { maxOutputTokens: 300 },
           }),
           signal: AbortSignal.timeout(4500),
