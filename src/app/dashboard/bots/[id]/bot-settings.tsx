@@ -120,198 +120,177 @@ export default function BotSettings({
     <div className="space-y-4">
       <h2 className="text-lg font-semibold">{title}</h2>
 
-      <div className="card divide-y divide-border/60">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {filteredToggles.map((t) => (
-          <div key={t.key} className="flex items-center justify-between gap-4 p-4">
-            <div>
-              <h3 className="font-medium">{t.label}</h3>
-              <p className="text-sm text-muted">{t.desc}</p>
+          <div key={t.key} className={`relative flex flex-col justify-between overflow-hidden rounded-2xl border transition-all duration-300 backdrop-blur-xl ${settings[t.key] ? 'border-accent/50 bg-accent/5 shadow-[0_0_20px_rgba(0,212,255,0.1)]' : 'border-border/60 bg-surface/40 hover:border-border hover:bg-elevated/40'}`}>
+            <div className="p-5">
+              <div className="flex items-start justify-between gap-4 mb-3">
+                <h3 className="font-bold text-fg">{t.label}</h3>
+                <Toggle
+                  on={settings[t.key] as boolean}
+                  onChange={() => update(t.key, !settings[t.key] as never)}
+                />
+              </div>
+              <p className="text-xs text-muted leading-relaxed">{t.desc}</p>
+
+              {/* Extra configurations when ON */}
+              {settings[t.key] && (
+                <div className="mt-4 pt-4 border-t border-border/50 animate-in fade-in slide-in-from-top-2 duration-300">
+                  {t.key === "autoReply" && (
+                    <div className="space-y-2">
+                      <label className="text-xs font-semibold text-accent">نص الرد التلقائي</label>
+                      <textarea
+                        className="input text-xs min-h-[80px] w-full"
+                        value={settings.autoReplyMessage}
+                        onChange={(e) => update("autoReplyMessage", e.target.value)}
+                        placeholder="مرحباً! أنا غير متاح حالياً..."
+                      />
+                    </div>
+                  )}
+
+                  {t.key === "welcomeGroups" && (
+                    <div className="space-y-2">
+                      <label className="text-xs font-semibold text-accent">رسالة الترحيب</label>
+                      <textarea
+                        className="input text-xs min-h-[80px] w-full"
+                        value={settings.welcomeMessage}
+                        onChange={(e) => update("welcomeMessage", e.target.value)}
+                        placeholder="أهلاً بك {user} في مجموعتنا 👋"
+                      />
+                    </div>
+                  )}
+
+                  {t.key === "farewellGroups" && (
+                    <div className="space-y-2">
+                      <label className="text-xs font-semibold text-accent">رسالة الوداع</label>
+                      <textarea
+                        className="input text-xs min-h-[80px] w-full"
+                        value={settings.farewellMessage}
+                        onChange={(e) => update("farewellMessage", e.target.value)}
+                        placeholder="نتمنى لك التوفيق {user} 👋"
+                      />
+                    </div>
+                  )}
+
+                  {t.key === "smartReply" && (
+                    <div className="space-y-2">
+                      <label className="text-xs font-semibold text-accent">معلومات نشاطك للذكاء الاصطناعي</label>
+                      <textarea
+                        className="input text-xs min-h-[120px] w-full"
+                        value={settings.businessInfo}
+                        onChange={(e) => update("businessInfo", e.target.value)}
+                        placeholder={"مثال: متجر عطور في صنعاء...\n(أخبر الذكاء بماذا يجيب عملاءك)"}
+                      />
+                    </div>
+                  )}
+
+                  {t.key === "autoForward" && (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-xs font-semibold text-accent block mb-1">رابط قناة المصدر</label>
+                        <input
+                          dir="ltr"
+                          className="input text-xs w-full"
+                          value={settings.forwardSource}
+                          onChange={(e) => update("forwardSource", e.target.value)}
+                          placeholder="https://whatsapp.com/channel/..."
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-accent block mb-1">المجموعات المستهدفة (أرقام)</label>
+                        <input
+                          dir="ltr"
+                          className="input text-xs w-full"
+                          value={settings.forwardTargets}
+                          onChange={(e) => update("forwardTargets", e.target.value)}
+                          placeholder="967xxxx-yyyy@g.us, ..."
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {t.key === "firewallOn" && (
+                    <div className="space-y-2">
+                      <label className="text-xs font-semibold text-accent">دومينات محظورة</label>
+                      <textarea
+                        dir="ltr"
+                        className="input text-xs min-h-[80px] w-full"
+                        value={(settings.firewallDomains ?? []).join("\n")}
+                        onChange={(e) =>
+                          update(
+                            "firewallDomains",
+                            e.target.value.split("\n").map((s) => s.trim().toLowerCase()).filter(Boolean)
+                          )
+                        }
+                        placeholder="whatsapp.com\nwa.me"
+                      />
+                    </div>
+                  )}
+
+                  {t.key === "dictionaryOn" && (
+                    <div className="space-y-2">
+                      <label className="text-xs font-semibold text-accent">الكلمات المحظورة</label>
+                      <textarea
+                        className="input text-xs min-h-[80px] w-full"
+                        value={(settings.bannedWords ?? []).join("\n")}
+                        onChange={(e) =>
+                          update(
+                            "bannedWords",
+                            e.target.value.split("\n").map((s) => s.trim()).filter(Boolean)
+                          )
+                        }
+                        placeholder="سبأ\nشتم"
+                      />
+                    </div>
+                  )}
+
+                  {t.key === "autoReact" && (
+                    <div className="space-y-2">
+                      <label className="text-xs font-semibold text-accent block mb-2">اختر الإيموجي</label>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {["❤️", "👍", "😂", "🔥", "✅", "🤖", "✨"].map((e) => (
+                          <button
+                            key={e}
+                            type="button"
+                            onClick={() => update("reactEmoji", e)}
+                            className={`grid h-8 w-8 place-items-center rounded-lg border text-base transition-colors ${
+                              settings.reactEmoji === e ? "border-accent bg-accent/20 shadow-sm" : "border-border/50 hover:bg-elevated"
+                            }`}
+                          >
+                            {e}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                </div>
+              )}
             </div>
-            <Toggle
-              on={settings[t.key] as boolean}
-              onChange={() => update(t.key, !settings[t.key] as never)}
-            />
           </div>
         ))}
+      </div>
 
-        {settings.autoReply && (
-          <div className="p-4">
-            <label className="mb-1.5 block text-sm font-medium" htmlFor="reply-msg">
-              نص الرد التلقائي
-            </label>
-            <textarea
-              id="reply-msg"
-              className="input min-h-24 resize-y"
-              value={settings.autoReplyMessage}
-              onChange={(e) => update("autoReplyMessage", e.target.value)}
-              placeholder="مرحباً! أنا غير متاح حالياً وسأعاود التواصل قريباً."
-            />
-          </div>
-        )}
-
-        {settings.welcomeGroups && (
-          <div className="p-4">
-            <label className="mb-1.5 block text-sm font-medium" htmlFor="welcome-msg">
-              رسالة الترحيب
-            </label>
-            <textarea
-              id="welcome-msg"
-              className="input min-h-20 resize-y"
-              value={settings.welcomeMessage}
-              onChange={(e) => update("welcomeMessage", e.target.value)}
-              placeholder="أهلاً بك {user} في مجموعتنا 👋 اقرأ القوانين المثبتة"
-            />
-          </div>
-        )}
-
-        {settings.farewellGroups && (
-          <div className="p-4">
-            <label className="mb-1.5 block text-sm font-medium" htmlFor="farewell-msg">
-              رسالة الوداع
-            </label>
-            <textarea
-              id="farewell-msg"
-              className="input min-h-20 resize-y"
-              value={settings.farewellMessage}
-              onChange={(e) => update("farewellMessage", e.target.value)}
-              placeholder="نتمنى لك التوفيق {user} 👋"
-            />
-          </div>
-        )}
-
-        {settings.smartReply && (
-          <div className="p-4">
-            <label className="mb-1.5 block text-sm font-medium" htmlFor="biz-info">
-              معلومات نشاطك (يبنى عليها الرد الذكي)
-            </label>
-            <textarea
-              id="biz-info"
-              className="input min-h-28 resize-y"
-              value={settings.businessInfo}
-              onChange={(e) => update("businessInfo", e.target.value)}
-              placeholder={"مثال: متجر عطور في صنعاء.\nأسعارنا من 50 إلى 300 ريال.\nالتوصيل داخل المدينة مجاناً.\nساعات العمل: 9 صباحاً - 10 مساءً."}
-            />
-            <p className="mt-2 text-xs text-muted">
-              كلما زادت التفاصيل كانت الإجابات أدق. لا تشارك معلومات بنكية.
-            </p>
-          </div>
-        )}
-
-        <div className="p-4">
-          <label className="mb-1.5 block text-sm font-medium" htmlFor="wm">
-            وضع العمل (من يمكنه تفعيل الردود)
+      {activeCategory === "automation" && (
+        <div className="card p-5 mt-4 max-w-sm">
+          <label className="mb-2 block text-sm font-bold text-fg" htmlFor="wm">
+            وضع العمل العام للبوت
           </label>
           <select
             id="wm"
-            className="input"
+            className="input text-sm"
             value={settings.workMode}
             onChange={(e) => update("workMode", e.target.value)}
           >
             <option value="public">عام — الجميع</option>
-            <option value="restricted">مقيّد — جهات محددة</option>
-            <option value="inbox">صندوق الوارد فقط</option>
+            <option value="restricted">مقيّد — جهات الاتصال فقط</option>
+            <option value="inbox">صندوق الوارد (منع المجموعات)</option>
           </select>
+          <p className="mt-2 text-xs text-muted">
+            يحدد من يمكن للبوت الرد عليهم والتفاعل معهم.
+          </p>
         </div>
-
-        {settings.autoForward && (
-          <div className="space-y-4 p-4">
-            <div>
-              <label className="mb-1.5 block text-sm font-medium" htmlFor="fwd-source">
-                القناة المصدر (رابط)
-              </label>
-              <input
-                id="fwd-source"
-                dir="ltr"
-                className="input text-left"
-                value={settings.forwardSource}
-                onChange={(e) => update("forwardSource", e.target.value)}
-                placeholder="https://whatsapp.com/channel/0029Va..."
-              />
-            </div>
-            <div>
-              <label className="mb-1.5 block text-sm font-medium" htmlFor="fwd-targets">
-                المجموعات المستهدفة (أرقامها مفصولة بفاصلة)
-              </label>
-              <input
-                id="fwd-targets"
-                dir="ltr"
-                className="input text-left"
-                value={settings.forwardTargets}
-                onChange={(e) => update("forwardTargets", e.target.value)}
-                placeholder="967771234567-1234567890@g.us, 967777654321-9876543210@g.us"
-              />
-              <p className="mt-2 text-xs text-muted">
-                للحصول على رقم مجموعة أرسل فيها الأمر <span dir="ltr">.menu</span> وستجد المعرف في سجل الأحداث.
-              </p>
-            </div>
-          </div>
-        )}
-
-        {settings.firewallOn && (
-          <div className="p-4">
-            <label className="mb-1.5 block text-sm font-medium" htmlFor="fw-domains">
-              دومينات محظورة (واحد لكل سطر)
-            </label>
-            <textarea
-              id="fw-domains"
-              dir="ltr"
-              className="input min-h-20 resize-y text-left"
-              value={(settings.firewallDomains ?? []).join("\n")}
-              onChange={(e) =>
-                update(
-                  "firewallDomains",
-                  e.target.value.split("\n").map((s) => s.trim().toLowerCase()).filter(Boolean)
-                )
-              }
-              placeholder="whatsapp.com&#10;wa.me"
-            />
-            <p className="mt-2 text-xs text-muted">
-              أي رسالة بمجموعاتك تحتوي رابطاً لهذه الدومينات تُحذف فوراً.
-            </p>
-          </div>
-        )}
-
-        {settings.dictionaryOn && (
-          <div className="p-4">
-            <label className="mb-1.5 block text-sm font-medium" htmlFor="bw-words">
-              كلمات محظورة (كلمة لكل سطر)
-            </label>
-            <textarea
-              id="bw-words"
-              className="input min-h-20 resize-y"
-              value={(settings.bannedWords ?? []).join("\n")}
-              onChange={(e) =>
-                update(
-                  "bannedWords",
-                  e.target.value.split("\n").map((s) => s.trim()).filter(Boolean)
-                )
-              }
-              placeholder="سبأ&#10;شتم"
-            />
-            <p className="mt-2 text-xs text-muted">
-              أي رسالة بمجموعاتك تحتوي إحداها تُحذف فوراً.
-            </p>
-          </div>
-        )}
-
-        {settings.autoReact && (
-          <div className="flex items-center gap-3 p-4">
-            <span className="text-sm font-medium">إيموجي التفاعل</span>
-            {["❤️", "👍", "😂", "🔥", "✅"].map((e) => (
-              <button
-                key={e}
-                type="button"
-                onClick={() => update("reactEmoji", e)}
-                className={`grid h-9 w-9 place-items-center rounded-lg border text-lg transition-colors ${
-                  settings.reactEmoji === e ? "border-accent bg-accent/15" : "border-border hover:bg-elevated"
-                }`}
-              >
-                {e}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+      )}
 
       <div className="flex items-center gap-3">
         <CyberButton

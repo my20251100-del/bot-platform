@@ -1207,8 +1207,14 @@ async function generateAIResponse(userText, senderName, cfg, aiMedia = null) {
     return null; // Not a valid Gemini key, skip immediately
   }
 
+  const messageWordCount = text.trim().split(/\s+/).length;
+  const lengthInstruction = messageWordCount <= 3 
+    ? "توجيه صارم جداً: رسالة المستخدم قصيرة جداً (مثل هلا، السلام). يجب أن يكون ردك قصيراً جداً بحجم مشابه (من كلمة إلى 4 كلمات كحد أقصى مثل: أهلاً بك، وعليكم السلام). ممنوع كتابة فقرات أو فتح مواضيع." 
+    : "أجب بشكل يتناسب تماماً مع حجم رسالة المستخدم. إذا كان السؤال بسيطاً أجب باختصار شديد.";
+
   const systemPrompt =
-    (cfg.geminiSystemPrompt || "أنت مساعد ذكي ولطيف، تجيب باختصار وعفوية وباللهجة الطبيعية بدون تكلف.") +
+    (cfg.geminiSystemPrompt || "أنت مساعد ذكي ولطيف، تجيب بعفوية وباللهجة الطبيعية بدون تكلف.") +
+    `\n\n${lengthInstruction}\n` +
     (senderName ? `\nاسم المتحدث: ${senderName}` : "");
 
   // Candidate models in priority order:
