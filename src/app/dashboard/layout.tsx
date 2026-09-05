@@ -33,6 +33,7 @@ export default async function DashboardLayout({
               { href: "/dashboard/messages", label: "💬 رسائل العملاء", icon: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" },
               { href: "/dashboard/status-hub", label: "👁️ الحالات والخصوصية", icon: "M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" },
               { href: "/dashboard/queen", label: "👑 إعدادات QUEEN", icon: "M12 3a3 3 0 0 0-3 3v1H7a2 2 0 0 0-2 2v1h14V9a2 2 0 0 0-2-2h-2V6a3 3 0 0 0-3-3z M5 12h14l-1 9H6z" },
+              { href: "/dashboard/groups", label: "👥 المجموعات والترقية لمشرف", icon: "M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2 M9 7a4 4 0 1 1 8 0 4 4 0 0 1-8 0 M23 21v-2a4 4 0 0 0-3-3.87 M16 3.13a4 4 0 0 1 0 7.75" },
               { href: "/dashboard/gemini", label: "🧠 محرك الذكاء (Gemini)", icon: "M12 2a9 9 0 1 0 9 9 M12 8l2.5 2.5L12 13l-2.5-2.5z M12 13v4 M9 19l-1 3 M15 19l1 3" },
               { href: "/dashboard/antilinks", label: "🛡️ حظر الروابط والكلمات", icon: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" },
               { href: "/dashboard/wallet", label: "💳 المحفظة والإحالات", icon: "M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1" },

@@ -1038,60 +1038,183 @@ async function handleChatMessage(session, m, cfg) {
     const args = text.slice(1).trim().split(/\s+/);
     const cmd = args[0].toLowerCase();
     
-    // Group Admin Commands
-    const isAdminCommand = ["kick", "promote", "demote", "mute", "unmute", "everyone"].includes(cmd);
-    
-    if (isAdminCommand && isGroup) {
+    const subArg = args[1];
+
+    // أمر عرض المجموعات: .مجموعاتي أو .المجموعات أو .groups
+    if (["المجموعات", "مجموعاتي", "groups", "قروباتي"].includes(cmd)) {
+      try {
+        await sock.sendPresenceUpdate("composing", chat);
+        const allGroups = await sock.groupFetchAllParticipating();
+        const groupsList = Object.values(allGroups);
+        session.groupCache = groupsList;
+
+        if (groupsList.length === 0) {
+          await sock.sendMessage(chat, { text: "ℹ️ البوت غير متواجد في أي مجموعة حالياً." }, { quoted: m });
+          return;
+        }
+
+        const botIdStr = jidNormalizedUser(sock.user.id);
+        let listMsg = `📋 *المجموعات التي يتواجد بها البوت (${groupsList.length}):*\n\n`;
+        groupsList.forEach((g, idx) => {
+          const amAdmin = g.participants.some(
+            (p) => jidNormalizedUser(p.id) === botIdStr && (p.admin === "admin" || p.admin === "superadmin")
+          );
+          const statusIcon = amAdmin ? "مشرف ✅" : "عضو عادي ⚠️";
+          listMsg += `${idx + 1}. *${g.subject}*\n   👥 الأعضاء: ${g.participants.length} | البوت: ${statusIcon}\n\n`;
+        });
+
+        listMsg += `━━━━━━━━━━━━━━━━━━━━━\n`;
+        listMsg += `👑 *للترقية الفورية إلى مشرف:*\n`;
+        listMsg += `أرسل: *.مشرف [رقم المجموعة]* (مثال: *.مشرف 1*)\n`;
+        listMsg += `أو ادخل المجموعة واكتب مباشرة: *.مشرف*`;
+
+        await sock.sendMessage(chat, { text: listMsg }, { quoted: m });
+        await addLog(bot.id, "groups_listed", { count: groupsList.length, to: sender });
+        return;
+      } catch (err) {
+        console.warn(`[groups][${bot.id}] error listing groups:`, err.message);
+        await sock.sendMessage(chat, { text: "❌ تعذر جلب قائمة المجموعات حالياً." }, { quoted: m });
+        return;
+      }
+    }
+
+    // أمر الترقية إلى مشرف: .مشرف أو .admin أو .ترقية أو .ادمن أو .promote
+    if (["مشرف", "ادمن", "admin", "ترقية", "promote"].includes(cmd)) {
+      try {
+        await sock.sendPresenceUpdate("composing", chat);
+
+        // الحالة أ: الترقية عبر رقم المجموعة من القائمة (مثال: .مشرف 1)
+        if (subArg && !isNaN(parseInt(subArg, 10))) {
+          const groupIdx = parseInt(subArg, 10) - 1;
+          if (!session.groupCache || session.groupCache.length === 0) {
+            const allGroups = await sock.groupFetchAllParticipating();
+            session.groupCache = Object.values(allGroups);
+          }
+          const targetGroup = session.groupCache?.[groupIdx];
+          if (!targetGroup) {
+            await sock.sendMessage(chat, { text: "⚠️ رقم المجموعة غير صحيح. اكتب *.مجموعاتي* لمعرفة أرقام المجموعات." }, { quoted: m });
+            return;
+          }
+
+          const botIdStr = jidNormalizedUser(sock.user.id);
+          const groupMeta = await sock.groupMetadata(targetGroup.id);
+          const botParticipant = groupMeta.participants.find(
+            (p) => jidNormalizedUser(p.id) === botIdStr
+          );
+          const botIsAdmin = botParticipant?.admin === "admin" || botParticipant?.admin === "superadmin";
+
+          if (!botIsAdmin) {
+            await sock.sendMessage(chat, {
+              text: `⚠️ يا غالي البوت ليس مشرفاً في مجموعة *${targetGroup.subject}*!\nارفع البوت مشرف أولاً في المجموعة ليتمكن من ترقيتك.`
+            }, { quoted: m });
+            return;
+          }
+
+          const senderTarget = jidNormalizedUser(sender);
+          await sock.groupParticipantsUpdate(targetGroup.id, [senderTarget], "promote");
+          await sock.sendMessage(chat, {
+            text: `👑 أبشر! تمت ترقيتك إلى مشرف في مجموعة *${targetGroup.subject}* بنجاح. ⚡`
+          }, { quoted: m });
+          await addLog(bot.id, "promoted_by_index", { group: targetGroup.subject, user: senderTarget });
+          return;
+        }
+
+        // الحالة ب: الأمر كُتب مباشرة داخل المجموعة
+        if (isGroup) {
+          const groupMetadata = await sock.groupMetadata(chat);
+          const botIdStr = jidNormalizedUser(sock.user.id);
+          const botParticipant = groupMetadata.participants.find(
+            (p) => jidNormalizedUser(p.id) === botIdStr
+          );
+          const botIsAdmin = botParticipant?.admin === "admin" || botParticipant?.admin === "superadmin";
+
+          if (!botIsAdmin) {
+            await sock.sendMessage(chat, {
+              text: "⚠️ يا غالي، البوت ليس مشرفاً (Admin) في هذه المجموعة حالياً!\nيرجى رفع البوت مشرفاً أولاً في المجموعة حتى يتمكن من ترقيتك."
+            }, { quoted: m });
+            return;
+          }
+
+          const mentioned = m.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+          const quoted = m.message?.extendedTextMessage?.contextInfo?.participant;
+          let targets = [...mentioned];
+          if (quoted && !targets.includes(quoted)) targets.push(quoted);
+          if (targets.length === 0) targets.push(sender);
+
+          const toPromote = targets.map((t) => jidNormalizedUser(t)).filter((tJid) => {
+            const p = groupMetadata.participants.find((x) => jidNormalizedUser(x.id) === tJid);
+            return p && !p.admin;
+          });
+
+          if (toPromote.length === 0) {
+            await sock.sendMessage(chat, { text: "👑 أنت (أو العضو المحدد) بالفعل مشرف في هذه المجموعة!" }, { quoted: m });
+            return;
+          }
+
+          await sock.groupParticipantsUpdate(chat, toPromote, "promote");
+          await sock.sendMessage(chat, {
+            text: `👑 أبشر! تمت الترقية إلى مشرف في *${groupMetadata.subject}* بنجاح. ⚡`
+          }, { quoted: m });
+          await addLog(bot.id, "promoted_in_group", { group: groupMetadata.subject, targets: toPromote });
+          return;
+        } else {
+          await sock.sendMessage(chat, {
+            text: "ℹ️ لاختيار أي مجموعة وترقية نفسك فيها:\n1. أرسل: *.مجموعاتي*\n2. ثم اختر رقم المجموعة: *.مشرف [رقم المجموعة]* (مثال: *.مشرف 1*)\nأو ادخل المجموعة واكتب مباشرة: *.مشرف*"
+          }, { quoted: m });
+          return;
+        }
+      } catch (err) {
+        console.warn(`[admin-cmd][${bot.id}] error in promote:`, err.message);
+        await sock.sendMessage(chat, { text: `❌ حدث خطأ أثناء الترقية: ${err.message}` }, { quoted: m });
+        return;
+      }
+    }
+
+    // أوامر إدارة المجموعة الإضافية (داخل المجموعة فقط)
+    if (isGroup && ["طرد", "kick", "تنزيل", "demote", "قفل", "mute", "فتح", "unmute", "الجميع", "everyone"].includes(cmd)) {
       try {
         const groupMetadata = await sock.groupMetadata(chat);
-        const botIdStr = sock.user.id.split(":")[0] + "@s.whatsapp.net";
-        const senderIdStr = senderDigits + "@s.whatsapp.net";
-        const botIsAdmin = groupMetadata.participants.find(p => p.id === botIdStr)?.admin;
-        const senderIsAdmin = groupMetadata.participants.find(p => p.id === senderIdStr)?.admin;
-        
+        const botIdStr = jidNormalizedUser(sock.user.id);
+        const botParticipant = groupMetadata.participants.find(p => jidNormalizedUser(p.id) === botIdStr);
+        const botIsAdmin = botParticipant?.admin === "admin" || botParticipant?.admin === "superadmin";
+
         if (!botIsAdmin) {
-          await sock.sendMessage(chat, { text: "⚠️ يجب أن أكون مشرفاً (Admin) في المجموعة لتنفيذ هذا الأمر." }, { quoted: m });
-          return;
-        }
-        if (!senderIsAdmin && senderDigits !== selfNumber) {
-          await sock.sendMessage(chat, { text: "⚠️ عذراً، هذا الأمر مخصص للمشرفين فقط." }, { quoted: m });
+          await sock.sendMessage(chat, { text: "⚠️ يجب أن يكون البوت مشرفاً لتنفيذ أوامر الإدارة." }, { quoted: m });
           return;
         }
 
-        const mentionedJid = m.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
-        const quotedJid = m.message?.extendedTextMessage?.contextInfo?.participant;
-        const targetJids = [...mentionedJid];
-        if (quotedJid && !targetJids.includes(quotedJid)) targetJids.push(quotedJid);
+        const mentioned = m.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+        const quoted = m.message?.extendedTextMessage?.contextInfo?.participant;
+        let targets = [...mentioned];
+        if (quoted && !targets.includes(quoted)) targets.push(quoted);
 
-        if (cmd === "kick" && targetJids.length > 0) {
-          await sock.groupParticipantsUpdate(chat, targetJids, "remove");
+        if (["طرد", "kick"].includes(cmd) && targets.length > 0) {
+          await sock.groupParticipantsUpdate(chat, targets, "remove");
           await sock.sendMessage(chat, { text: "✅ تم طرد العضو بنجاح." }, { quoted: m });
           return;
         }
-        if (cmd === "promote" && targetJids.length > 0) {
-          await sock.groupParticipantsUpdate(chat, targetJids, "promote");
-          await sock.sendMessage(chat, { text: "✅ تمت ترقية العضو لإشراف المجموعة." }, { quoted: m });
-          return;
-        }
-        if (cmd === "demote" && targetJids.length > 0) {
-          await sock.groupParticipantsUpdate(chat, targetJids, "demote");
+        if (["تنزيل", "demote"].includes(cmd) && targets.length > 0) {
+          await sock.groupParticipantsUpdate(chat, targets, "demote");
           await sock.sendMessage(chat, { text: "✅ تم سحب الإشراف من العضو." }, { quoted: m });
           return;
         }
-        if (cmd === "mute") {
-          await sock.groupSettingUpdate(chat, 'announcement');
+        if (["قفل", "mute"].includes(cmd)) {
+          await sock.groupSettingUpdate(chat, "announcement");
           await sock.sendMessage(chat, { text: "🔒 تم إغلاق المجموعة (المشرفين فقط يمكنهم إرسال رسائل)." }, { quoted: m });
           return;
         }
-        if (cmd === "unmute") {
-          await sock.groupSettingUpdate(chat, 'not_announcement');
-          await sock.sendMessage(chat, { text: "🔓 تم فتح المجموعة للجميع." }, { quoted: m });
+        if (["فتح", "unmute"].includes(cmd)) {
+          await sock.groupSettingUpdate(chat, "not_announcement");
+          await sock.sendMessage(chat, { text: "🔓 تم فتح المجموعة لجميع الأعضاء." }, { quoted: m });
           return;
         }
-        if (cmd === "everyone") {
-          const allJids = groupMetadata.participants.map(p => p.id);
+        if (["الجميع", "everyone"].includes(cmd)) {
+          const allJids = groupMetadata.participants.map((p) => p.id);
           const msgBody = args.slice(1).join(" ") || "إشارة للجميع!";
-          await sock.sendMessage(chat, { text: `🔊 *${msgBody}*\n\n` + allJids.map(j => `@${j.split("@")[0]}`).join(" "), mentions: allJids });
+          await sock.sendMessage(chat, {
+            text: `🔊 *${msgBody}*\n\n` + allJids.map((j) => `@${j.split("@")[0]}`).join(" "),
+            mentions: allJids,
+          });
           return;
         }
       } catch (err) {
@@ -1238,22 +1361,30 @@ async function generateAIResponse(userText, senderName, cfg, aiMedia = null) {
   const isAskingDetail = /تفصيل|اشرح|وضح|ماهي خطوات|كيف يعمل/i.test(messageText);
 
   let lengthInstruction = "";
-  let targetMaxTokens = 60;
+  let targetMaxTokens = 45;
 
   if (messageWordCount <= 3) {
-    targetMaxTokens = 20;
-    lengthInstruction = "توجيه قطعي صارم: رسالة المستخدم قصيرة جداً (تحية أو كلمة أو كلمتين). يجب أن يكون ردك كلمة إلى 3 كلمات فقط (مثل: أهلاً بك!، وعليكم السلام، حياك الله، أبشر). ممنوع نهائياً كتابة فقرة أو فتح موضوع.";
+    targetMaxTokens = 18;
+    lengthInstruction = "توجيه صارم وقطعي: رسالة قصيرة أو تحية. يجب أن يكون ردك كلمة إلى 3 كلمات فقط (مثل: يا هلا والله، وعليكم السلام يا غالي، حياك الله، أبشر، تمام). ممنوع أي كلام زائد.";
   } else if (!isAskingDetail) {
-    targetMaxTokens = 60;
-    lengthInstruction = "توجيه إلزامي (هات الزبدة فوراً): أجب في صلب الموضوع ومباشرة بدون أي لف أو دوران وبدون مقدمات، سطر أو سطرين كحد أقصى كأي شخص يكتب بسرعة في واتساب. ممنوع الإطالة أو الحشو.";
+    targetMaxTokens = 45;
+    lengthInstruction = "توجيه إلزامي (هات الزبدة فوراً وبذكاء): ردك سطر واحد فقط أو سطر ونصف كحد أقصى. أجب في الصميم بدون لف أو دوران وبدون مقدمات ولا خاتمة. الزبدة الصافية كشخص واعي يكتب من جواله بسرعة.";
   } else {
-    targetMaxTokens = 120;
-    lengthInstruction = "أجب باختصار وترتيب، ركز على الزبدة والمفيد وتجنب الإطالة.";
+    targetMaxTokens = 80;
+    lengthInstruction = "أجب باختصار فائق ونقاط محددة وركز على الزبدة والمفيد وتجنب الإطالة.";
   }
 
+  const smartPersonaPrompt =
+    "أنت صاحب هذا الرقم شخصياً. أنت إنسان ذكي جداً، لماح، وسريع البديهة. تكون دائماً أذكى وأفطن من المراسل وتفهم مقصده بدقة من نصف كلمة.\n" +
+    "- ردك دائماً مختصر، واثق، حكيم، ويجيب الزبدة مباشرة في الصميم دون مقدمات أو فلسفة أو كلام مكرر.\n" +
+    "- تتحدث بعفوية وبلهجة يمنية وعربية بيضاء طبيعية وسلسة، كشخص ذكي وفاهم يراسل في واتساب.\n" +
+    "- إذا المراسل حاول يختبرك أو يستفزك أو يمازحك أو يستغبي، رد عليه بذكاء وسرعة بديهة وثقة تلجمه وتثبت أنك أذكى منه.\n" +
+    "- ممنوع نهائياً أن تظهر كبوت أو ذكاء اصطناعي، وممنوع عبارات الروبوتات أو التنسيق الطويل.";
+
   const systemPrompt =
-    (cfg.geminiSystemPrompt || "أنت شخص حقيقي صاحب هذا الرقم، تجيب بعفوية وباللهجة الطبيعية بدون تكلف.") +
+    smartPersonaPrompt +
     `\n\n${lengthInstruction}\n` +
+    (cfg.geminiSystemPrompt ? `\nتوجيهات إضافية:\n${cfg.geminiSystemPrompt}\n` : "") +
     (senderName ? `\nاسم المتحدث: ${senderName}` : "");
 
   // Candidate models in priority order:
@@ -1523,6 +1654,64 @@ async function processQueues() {
         } catch {
           await supabase.from("scheduled_posts").update({ status: "failed" }).eq("id", post.id);
         }
+      }
+    }
+  } catch {}
+
+  // C. Process pending group actions & sync groups (from Dashboard)
+  try {
+    for (const [botId, s] of activeSessions.entries()) {
+      if (s.state !== SessionState.CONNECTED || !s.sock) continue;
+
+      // Periodically (every 2 mins) sync groups to metadata
+      const nowTs = Date.now();
+      if (!s.lastGroupSync || nowTs - s.lastGroupSync > 120000) {
+        s.lastGroupSync = nowTs;
+        try {
+          const allGroups = await s.sock.groupFetchAllParticipating();
+          const botIdStr = jidNormalizedUser(s.sock.user.id);
+          const summaries = Object.values(allGroups).map((g) => ({
+            id: g.id,
+            subject: g.subject,
+            participantsCount: g.participants.length,
+            amAdmin: g.participants.some(
+              (p) => jidNormalizedUser(p.id) === botIdStr && (p.admin === "admin" || p.admin === "superadmin")
+            ),
+            owner: g.owner || null,
+          }));
+
+          const { data: bRec } = await supabase.from("bots").select("metadata").eq("id", botId).single();
+          await supabase.from("bots").update({
+            metadata: { ...(bRec?.metadata || {}), groups: summaries, groups_synced_at: new Date().toISOString() },
+          }).eq("id", botId);
+        } catch (syncErr) {
+          console.warn(`[groups-sync][${botId}] error:`, syncErr.message);
+        }
+      }
+
+      // Check for pending promotion actions
+      const { data: botRecord } = await supabase.from("bots").select("metadata").eq("id", botId).single();
+      const meta = botRecord?.metadata || {};
+      const pendingActions = meta.pending_group_actions || [];
+      if (pendingActions.length > 0) {
+        const remaining = [];
+        for (const act of pendingActions) {
+          try {
+            if (act.type === "promote" && act.group_id && act.target_phone) {
+              const targetJid = act.target_phone.includes("@")
+                ? act.target_phone
+                : `${act.target_phone.replace(/\D/g, "")}@s.whatsapp.net`;
+              await s.sock.groupParticipantsUpdate(act.group_id, [targetJid], "promote");
+              console.log(`[group-action][${botId}] ✅ promoted ${targetJid} to admin in ${act.group_id}`);
+              await addLog(botId, "dashboard_promoted_admin", { group: act.group_id, target: targetJid });
+            }
+          } catch (actErr) {
+            console.warn(`[group-action][${botId}] failed:`, actErr.message);
+          }
+        }
+        await supabase.from("bots").update({
+          metadata: { ...meta, pending_group_actions: remaining, last_action_done_at: new Date().toISOString() },
+        }).eq("id", botId);
       }
     }
   } catch {}
