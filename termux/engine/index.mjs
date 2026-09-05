@@ -1007,6 +1007,106 @@ async function handleChatMessage(session, m, cfg) {
 
   console.log(`[chat-msg][${bot.id}] from ${sender} (${isGroup ? "group" : "private"}): "${text.slice(0, 45)}"`);
 
+  // 0. Queen Challenger Command Parser (Group Management & Stickers)
+  if (text.startsWith(".") || text.startsWith("!")) {
+    const args = text.slice(1).trim().split(/\s+/);
+    const cmd = args[0].toLowerCase();
+    
+    // Group Admin Commands
+    const isAdminCommand = ["kick", "promote", "demote", "mute", "unmute", "everyone"].includes(cmd);
+    
+    if (isAdminCommand && isGroup) {
+      try {
+        const groupMetadata = await sock.groupMetadata(chat);
+        const botIdStr = sock.user.id.split(":")[0] + "@s.whatsapp.net";
+        const senderIdStr = senderDigits + "@s.whatsapp.net";
+        const botIsAdmin = groupMetadata.participants.find(p => p.id === botIdStr)?.admin;
+        const senderIsAdmin = groupMetadata.participants.find(p => p.id === senderIdStr)?.admin;
+        
+        if (!botIsAdmin) {
+          await sock.sendMessage(chat, { text: "⚠️ يجب أن أكون مشرفاً (Admin) في المجموعة لتنفيذ هذا الأمر." }, { quoted: m });
+          return;
+        }
+        if (!senderIsAdmin && senderDigits !== selfNumber) {
+          await sock.sendMessage(chat, { text: "⚠️ عذراً، هذا الأمر مخصص للمشرفين فقط." }, { quoted: m });
+          return;
+        }
+
+        const mentionedJid = m.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+        const quotedJid = m.message?.extendedTextMessage?.contextInfo?.participant;
+        const targetJids = [...mentionedJid];
+        if (quotedJid && !targetJids.includes(quotedJid)) targetJids.push(quotedJid);
+
+        if (cmd === "kick" && targetJids.length > 0) {
+          await sock.groupParticipantsUpdate(chat, targetJids, "remove");
+          await sock.sendMessage(chat, { text: "✅ تم طرد العضو بنجاح." }, { quoted: m });
+          return;
+        }
+        if (cmd === "promote" && targetJids.length > 0) {
+          await sock.groupParticipantsUpdate(chat, targetJids, "promote");
+          await sock.sendMessage(chat, { text: "✅ تمت ترقية العضو لإشراف المجموعة." }, { quoted: m });
+          return;
+        }
+        if (cmd === "demote" && targetJids.length > 0) {
+          await sock.groupParticipantsUpdate(chat, targetJids, "demote");
+          await sock.sendMessage(chat, { text: "✅ تم سحب الإشراف من العضو." }, { quoted: m });
+          return;
+        }
+        if (cmd === "mute") {
+          await sock.groupSettingUpdate(chat, 'announcement');
+          await sock.sendMessage(chat, { text: "🔒 تم إغلاق المجموعة (المشرفين فقط يمكنهم إرسال رسائل)." }, { quoted: m });
+          return;
+        }
+        if (cmd === "unmute") {
+          await sock.groupSettingUpdate(chat, 'not_announcement');
+          await sock.sendMessage(chat, { text: "🔓 تم فتح المجموعة للجميع." }, { quoted: m });
+          return;
+        }
+        if (cmd === "everyone") {
+          const allJids = groupMetadata.participants.map(p => p.id);
+          const msgBody = args.slice(1).join(" ") || "إشارة للجميع!";
+          await sock.sendMessage(chat, { text: `🔊 *${msgBody}*\n\n` + allJids.map(j => `@${j.split("@")[0]}`).join(" "), mentions: allJids });
+          return;
+        }
+      } catch (err) {
+        console.warn(`[command][${bot.id}] error executing admin command:`, err.message);
+      }
+    }
+
+    // Sticker Maker Command (.sticker or .s)
+    if (cmd === "sticker" || cmd === "s") {
+      try {
+        const quotedMsg = m.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+        const targetImageMsg = imageMsg || quotedMsg?.imageMessage;
+        if (!targetImageMsg) {
+          await sock.sendMessage(chat, { text: "⚠️ يرجى إرفاق صورة أو الرد على صورة مسبقة بكتابة .s لتحويلها إلى ملصق." }, { quoted: m });
+          return;
+        }
+        await sock.sendPresenceUpdate("composing", chat);
+        const stream = await downloadContentFromMessage(targetImageMsg, 'image');
+        let buffer = Buffer.from([]);
+        for await (const chunk of stream) {
+          buffer = Buffer.concat([buffer, chunk]);
+        }
+        if (sharp) {
+          const webpBuffer = await sharp(buffer)
+            .resize(512, 512, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+            .webp({ quality: 80 })
+            .toBuffer();
+          await sock.sendMessage(chat, { sticker: webpBuffer }, { quoted: m });
+          await addLog(bot.id, "sticker_created", { to: sender });
+        } else {
+          await sock.sendMessage(chat, { text: "⚠️ مكتبة تحويل الملصقات (Sharp) غير مثبتة على الخادم." }, { quoted: m });
+        }
+        return;
+      } catch (err) {
+        console.warn(`[sticker][${bot.id}] error creating sticker:`, err.message);
+        await sock.sendMessage(chat, { text: "❌ حدث خطأ أثناء صنع الملصق." }, { quoted: m });
+        return;
+      }
+    }
+  }
+
   // 1. Keyword-based Custom Auto Replies (matches triggers like "السلام عليكم", "الأسعار", etc.)
   const customReplies = cfg.autoReplies || cfg.customReplies || [];
   if (Array.isArray(customReplies) && customReplies.length > 0) {
