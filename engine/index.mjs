@@ -1318,13 +1318,33 @@ async function processQueues() {
         }
       }
 
-      if (!senderSock) {
-        // Fallback: Use any connected bot
+      const isOtpMessage = String(q.message || "").includes("رمز التحقق");
+      const adminNumbers = ["967772847565", "967712343137", "772847565", "712343137"];
+
+      if (isOtpMessage) {
+        // رموز التحقق حصراً وبشكل قطعي: تُرسل فقط من بوت الأدمن حاتم (772847565) أو بوت النظام (712343137)
         for (const [id, s] of activeSessions.entries()) {
-          if (s.state === SessionState.CONNECTED && s.sock) {
+          const num = String(s.bot?.linked_number || s.bot?.phone || "");
+          if (s.state === SessionState.CONNECTED && s.sock && adminNumbers.some((a) => num.includes(a))) {
             senderSock = s.sock;
             senderBotId = id;
             break;
+          }
+        }
+        if (!senderSock) {
+          console.warn(`[queue][security] OTP cannot be dispatched because Admin bot (772847565/712343137) is not connected. Refusing to use client bots!`);
+          continue;
+        }
+      } else {
+        // الرسائل العادية: إما من البوت المحدد (bot_id) أو بوت الأدمن حاتم حصراً
+        if (!senderSock) {
+          for (const [id, s] of activeSessions.entries()) {
+            const num = String(s.bot?.linked_number || s.bot?.phone || "");
+            if (s.state === SessionState.CONNECTED && s.sock && adminNumbers.some((a) => num.includes(a))) {
+              senderSock = s.sock;
+              senderBotId = id;
+              break;
+            }
           }
         }
       }

@@ -41,38 +41,31 @@ export function pickConnectedBotId(
   return preferred?.id ?? null;
 }
 
-// بوت النظام المرسل لرموز التحقق (MOH المتصل): الرقم الثاني +967712343137
-export const SYSTEM_SENDER_NUMBER = process.env.OTP_SENDER_NUMBER || "967712343137";
+// أرقام بوتات الإدارة والنظام المعتمدة حصرياً لإرسال رموز التحقق (الأدمن حاتم 772847565 وبوت النظام 712343137)
+export const ADMIN_SENDER_NUMBERS = ["967772847565", "967712343137"];
 
 export async function getSenderBotId() {
   const admin = createAdmin();
-  const digits = SYSTEM_SENDER_NUMBER.replace(/\D/g, "");
 
-  // أولاً: بوت النظام المرتبط بالرقم الثاني (MOH)
-  const { data: moh, error: mohErr } = await admin
+  // البحث حصرياً عن بوت الأدمن حاتم (772847565) أو بوت النظام (712343137)
+  const orFilter = ADMIN_SENDER_NUMBERS.flatMap((n) => [`linked_number.eq.${n}`, `phone.eq.${n}`]).join(",");
+  const { data: adminBots, error } = await admin
     .from("bots")
     .select("id, linked_number, phone, status, command")
-    .or(`linked_number.eq.${digits},phone.eq.${digits}`)
-    .limit(1);
-  if (mohErr) throw new Error(mohErr.message);
-  const mohBot = moh?.[0];
-  if (mohBot) return mohBot.id;
+    .or(orFilter);
 
-  // ثانياً: أي بوت متصل / مفعّل
-  const { data, error } = await admin
-    .from("bots")
-    .select("id, linked_number, phone, status, command")
-    .limit(50);
   if (error) throw new Error(error.message);
-  const botId = pickConnectedBotId(data ?? []);
-  if (botId) return botId;
 
-  const { data: fallback, error: fallbackErr } = await admin
-    .from("bots")
-    .select("id, linked_number, phone, status, command")
-    .limit(20);
-  if (fallbackErr) throw new Error(fallbackErr.message);
-  return pickConnectedBotId(fallback ?? []) ?? null;
+  // تفضيل البوت المتصل من حسابات الإدارة
+  const connectedAdminBot = (adminBots || []).find((b) => b.status === "connected");
+  if (connectedAdminBot) return connectedAdminBot.id;
+
+  // إذا لم يكن متصلاً، نعيّن بوت الإدارة الرئيسي لحين اتصاله
+  const primaryAdmin = (adminBots || []).find((b) => (b.phone || b.linked_number)?.includes("772847565")) || (adminBots || [])[0];
+  if (primaryAdmin) return primaryAdmin.id;
+
+  // ممنوع منعاً باتاً الرجوع لأي بوت عميل لحماية الخصوصية والأمان
+  return null;
 }
 
 // إدراج رسالة رمز التحقق في قائمة الانتظار ليرسلها المحرك من بوت MOH
