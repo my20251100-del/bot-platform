@@ -97,7 +97,6 @@ export default function QueenForm({ botId, initial }: { botId: string; initial: 
       </div>
 
       <div className="space-y-3">
-      <div className="space-y-3">
         <p className="text-sm font-semibold text-accent border-b border-accent/20 pb-2">🛡️ حماية وإدارة المجموعات (Admin)</p>
         <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-border bg-elevated/40 p-3 hover:bg-elevated transition">
           <div>
