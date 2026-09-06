@@ -1,3 +1,4 @@
+process.exit(0); // DISABLED LOCALLY
 // ============================================================================
 // Bot Platform — 24/7 Resilient Production WhatsApp Engine
 // Red Queen Architecture Standard | Fully Isolated Sessions | Auto-Recovery
@@ -868,6 +869,10 @@ async function triggerAntiDelete(session, deletedMsgId, chatJid, senderJid) {
     if (msg.videoMessage) msg.videoMessage.viewOnce = false;
     if (msg.audioMessage) msg.audioMessage.viewOnce = false;
   }
+  
+  if (orig.m && msg) {
+      orig.m.message = msg; // Update the original message with the unwrapped, modified message
+  }
 
   let header = `🗑️ *تم كشف واسترجاع رسالة محذوفة!*\n👤 *المرسل:* ${senderName}\n💬 *المحادثة:* ${chatType}`;
   if (deletedText) {
@@ -881,7 +886,7 @@ async function triggerAntiDelete(session, deletedMsgId, chatJid, senderJid) {
     try {
       await sock.sendMessage(selfJid, { text: header });
       if (hasMedia && orig.m) {
-        await sock.sendMessage(selfJid, { forward: { key: orig.m.key, message: msg } });
+        await sock.sendMessage(selfJid, { forward: orig.m });
       }
     } catch (e) {
       console.warn(`[antidelete][${bot.id}] send to self failed:`, e.message);
@@ -893,7 +898,7 @@ async function triggerAntiDelete(session, deletedMsgId, chatJid, senderJid) {
     try {
       await sock.sendMessage(orig.chat, { text: header });
       if (hasMedia && orig.m) {
-        await sock.sendMessage(orig.chat, { forward: { key: orig.m.key, message: msg } });
+        await sock.sendMessage(orig.chat, { forward: orig.m });
       }
     } catch (e) {
       console.warn(`[antidelete][${bot.id}] in-chat send failed:`, e.message);
