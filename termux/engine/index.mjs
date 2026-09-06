@@ -516,10 +516,12 @@ async function handleConnectionUpdate(session, u, wantsPairingCode) {
     console.log(`[WA][${botId}] ✅ Connected successfully as +${number}`);
 
     // Send Welcome Message & Secret to Note to Self
-    if (!session.welcomeSent) {
-      session.welcomeSent = true;
+    const metadata = session.bot?.metadata || {};
+    if (!metadata.welcomeSent) {
       session.setTimeout(async () => {
         try {
+          metadata.welcomeSent = true;
+          await updateBot(botId, { metadata });
         const selfJid = session.sock?.user?.id;
         if (selfJid) {
           const appUrl = (process.env.APP_URL || "https://bot-platform-delta.vercel.app").replace(/\/$/, "");
