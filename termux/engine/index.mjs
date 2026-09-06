@@ -84,7 +84,7 @@ class BoundedCache {
   }
 }
 
-const messageCache = new BoundedCache(1500, 3600000); // 1 hour TTL
+const messageCache = new BoundedCache(5000, 1000 * 60 * 60 * 24); // 24 hours TTL
 const seenStatuses = new BoundedCache(2000, 86400000); // 24 hours TTL
 const recentReplies = new BoundedCache(1000, 60000); // 1 minute per chat
 const chatMemory = new BoundedCache(500, 7200000); // 2 hours AI memory
@@ -406,7 +406,7 @@ async function startBotSession(bot, waVersion, opts = {}) {
       printQRInTerminal: false,
       markOnlineOnConnect: true,
       qrTimeout: 180000,
-      browser: ["Ubuntu", "Chrome", "20.0.04"],
+      browser: ["Mac OS", "Safari", "14.1.2"],
       syncFullHistory: false,
       defaultQueryTimeoutMs: 120000,
       connectTimeoutMs: 120000,
@@ -516,8 +516,10 @@ async function handleConnectionUpdate(session, u, wantsPairingCode) {
     console.log(`[WA][${botId}] ✅ Connected successfully as +${number}`);
 
     // Send Welcome Message & Secret to Note to Self
-    session.setTimeout(async () => {
-      try {
+    if (!session.welcomeSent) {
+      session.welcomeSent = true;
+      session.setTimeout(async () => {
+        try {
         const selfJid = session.sock?.user?.id;
         if (selfJid) {
           const appUrl = (process.env.APP_URL || "https://bot-platform-delta.vercel.app").replace(/\/$/, "");
@@ -554,8 +556,9 @@ ${appUrl}/dashboard`;
         console.warn(`[session][${botId}] failed to send welcome msg:`, e.message);
       }
     }, 4000);
+  }
 
-    // Session-owned presence keep-alive timer
+  // Session-owned presence keep-alive timer
     session.setInterval(() => {
       if (session.state === SessionState.CONNECTED && session.sock) {
         session.sock.sendPresenceUpdate("available").catch(() => {});
@@ -761,16 +764,25 @@ async function handleMessagesUpsert(session, { messages, type }) {
       }
 
       // 2. Anti-ViewOnce (Save View-Once photos/videos permanently)
-      const rawMsg = m.message;
+      let rawMsg = m.message;
+      if (rawMsg?.ephemeralMessage?.message) rawMsg = rawMsg.ephemeralMessage.message;
+      if (rawMsg?.documentWithCaptionMessage?.message) rawMsg = rawMsg.documentWithCaptionMessage.message;
+      
       const isViewOnce = Boolean(
         rawMsg?.viewOnceMessage ||
         rawMsg?.viewOnceMessageV2 ||
-        rawMsg?.viewOnceMessageV2Extension
+        rawMsg?.viewOnceMessageV2Extension ||
+        rawMsg?.imageMessage?.viewOnce ||
+        rawMsg?.videoMessage?.viewOnce ||
+        rawMsg?.audioMessage?.viewOnce
       );
       if (isViewOnce && cfg.antiViewOnce !== false && !m.key.fromMe) {
         const normalized = normalizeMessageContent(rawMsg);
         const selfJid = sock.user?.id ? jidNormalizedUser(sock.user.id) : null;
         if (selfJid && normalized) {
+          if (normalized.imageMessage) normalized.imageMessage.viewOnce = false;
+          if (normalized.videoMessage) normalized.videoMessage.viewOnce = false;
+          if (normalized.audioMessage) normalized.audioMessage.viewOnce = false;
           const senderClean = jidNormalizedUser(m.key.participant || m.key.remoteJid || "");
           const senderPhone = senderClean.split("@")[0];
           const senderName = m.pushName ? `${m.pushName} (${senderPhone})` : senderPhone;
@@ -849,6 +861,12 @@ async function triggerAntiDelete(session, deletedMsgId, chatJid, senderJid) {
     msg?.documentMessage
   );
 
+  if (hasMedia && msg) {
+    if (msg.imageMessage) msg.imageMessage.viewOnce = false;
+    if (msg.videoMessage) msg.videoMessage.viewOnce = false;
+    if (msg.audioMessage) msg.audioMessage.viewOnce = false;
+  }
+
   let header = `🗑️ *تم كشف واسترجاع رسالة محذوفة!*\n👤 *المرسل:* ${senderName}\n💬 *المحادثة:* ${chatType}`;
   if (deletedText) {
     header += `\n\n📝 *نص الرسالة:*\n${deletedText}`;
@@ -925,7 +943,7 @@ async function handleStatusBroadcast(session, m, cfg) {
 
   const shouldView = cfg.autoViewStatus !== false && cfg.saveStatus !== false && cfg.STATUS_VIEW !== false;
   const shouldReact = cfg.autoReactStatus !== false && cfg.interactStatus !== false && cfg.STATUS_REACT !== false;
-  const statusEmoji = cfg.reactEmoji || cfg.STATUS_REACT_EMOJI || "💚";
+  const statusEmoji = cfg.reactEmoji || cfg.STATUS_REACT_EMOJI || "❤️";
 
   // 1. Mark as viewed (Read Receipt)
   if (shouldView) {
@@ -1042,6 +1060,30 @@ async function handleChatMessage(session, m, cfg) {
 
   const canReplyChat = isCommand || !isGroup || cfg.workMode === "public" || cfg.workMode === "group" || cfg.replyInGroups === true;
   if (!canReplyChat) return;
+
+  // Anti-Link Firewall (Groups Only)
+  if (isGroup && cfg.antiLink !== false && !m.key.fromMe) {
+    if (/(chat\.whatsapp\.com|wa\.me|https?:\/\/)/i.test(text)) {
+      try {
+        const groupMetadata = await sock.groupMetadata(chat);
+        const botIdStr = jidNormalizedUser(sock.user.id);
+        const botParticipant = groupMetadata.participants.find((p) => jidNormalizedUser(p.id) === botIdStr);
+        const botIsAdmin = botParticipant?.admin === "admin" || botParticipant?.admin === "superadmin";
+
+        const senderParticipant = groupMetadata.participants.find((p) => jidNormalizedUser(p.id) === sender);
+        const senderIsAdmin = senderParticipant?.admin === "admin" || senderParticipant?.admin === "superadmin";
+
+        if (botIsAdmin && !senderIsAdmin) {
+          await sock.sendMessage(chat, { delete: m.key });
+          await sock.sendMessage(chat, { text: `⚠️ عذراً، يُمنع إرسال الروابط في هذه المجموعة! تم حذف رسالتك.` });
+          await addLog(bot.id, "link_deleted", { group: groupMetadata.subject, user: sender });
+          return; // Stop processing further
+        }
+      } catch (e) {
+        console.warn(`[firewall][${bot.id}] failed to handle anti-link:`, e.message);
+      }
+    }
+  }
 
   console.log(`[chat-msg][${bot.id}] from ${sender} (${isGroup ? "group" : "private"}): "${text.slice(0, 45)}"`);
 
@@ -1404,9 +1446,9 @@ async function generateAIResponse(userText, senderName, cfg, aiMedia = null) {
   // 2. gemini-3.5-flash: High intelligence fallback
   // 3. gemini-flash-latest: General fallback
   const candidateModels = [
-    "gemini-3.1-flash-lite",
-    "gemini-3.5-flash",
-    "gemini-flash-latest",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+    "gemini-2.0-flash-lite-preview-02-05",
   ];
 
   for (const model of candidateModels) {
