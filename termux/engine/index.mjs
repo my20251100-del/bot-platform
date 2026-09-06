@@ -1,4 +1,5 @@
 process.exit(0); // DISABLED LOCALLY
+process.exit(0); // DISABLED LOCALLY
 // ============================================================================
 // Bot Platform — 24/7 Resilient Production WhatsApp Engine
 // Red Queen Architecture Standard | Fully Isolated Sessions | Auto-Recovery
@@ -815,6 +816,23 @@ async function handleMessagesUpsert(session, { messages, type }) {
         m.message?.imageMessage?.caption ||
         m.message?.videoMessage?.caption ||
         "";
+
+      // 4.1. Dictionary / Anti-Bad Words
+      if (cfg.dictionaryOn && cfg.bannedWords && Array.isArray(cfg.bannedWords)) {
+        const lowerText = rawText.toLowerCase();
+        const hasBadWord = cfg.bannedWords.some(w => w.trim() && lowerText.includes(w.trim().toLowerCase()));
+        if (hasBadWord && m.key.remoteJid?.includes("@g.us") && !m.key.fromMe) {
+          try {
+            await sock.sendMessage(m.key.remoteJid, { delete: m.key });
+            console.log(`[security][${bot.id}] deleted message containing bad word from ${m.key.participant}`);
+            await addLog(bot.id, "badword_deleted", { chat: m.key.remoteJid, sender: m.key.participant });
+          } catch (e) {
+            console.warn(`[security][${bot.id}] failed to delete bad word message:`, e.message);
+          }
+          continue; // Skip further processing
+        }
+      }
+
       const isCmd = /^[.!\/]/.test(rawText.trim());
 
       // If from me, ONLY allow if it is a command like .مجموعاتي or .مشرف
