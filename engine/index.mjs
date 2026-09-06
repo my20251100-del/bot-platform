@@ -811,10 +811,10 @@ async function handleMessagesUpsert(session, { messages, type }) {
 
       // 4. Message Processing (Commands, AI Smart Reply, Auto-Reply)
       const rawText =
-        m.message?.conversation ||
-        m.message?.extendedTextMessage?.text ||
-        m.message?.imageMessage?.caption ||
-        m.message?.videoMessage?.caption ||
+        rawMsg?.conversation ||
+        rawMsg?.extendedTextMessage?.text ||
+        rawMsg?.imageMessage?.caption ||
+        rawMsg?.videoMessage?.caption ||
         "";
 
       // 4.1. Dictionary / Anti-Bad Words
