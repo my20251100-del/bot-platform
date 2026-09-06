@@ -1,5 +1,4 @@
-process.exit(0); // DISABLED LOCALLY
-process.exit(0); // DISABLED LOCALLY
+
 // ============================================================================
 // Bot Platform — 24/7 Resilient Production WhatsApp Engine
 // Red Queen Architecture Standard | Fully Isolated Sessions | Auto-Recovery
