@@ -67,8 +67,10 @@ export async function POST(req: NextRequest) {
     }
 
     // إرسال الرمز عبر القنوات المتاحة (Resend فوراً)
-    sendTelegramOtp({ code, purpose: "reset", email: cleanEmail, phone }).catch(() => {});
-    await sendUniversalOtp({ to: cleanEmail, code, purpose: "reset" }).catch(() => {});
+    await Promise.allSettled([
+      sendTelegramOtp({ code, purpose: "reset", email: cleanEmail, phone }),
+      sendUniversalOtp({ to: cleanEmail, code, purpose: "reset" })
+    ]);
 
     if (phone) {
       try {

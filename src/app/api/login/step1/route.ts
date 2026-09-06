@@ -77,8 +77,10 @@ export async function POST(req: NextRequest) {
     });
     if (!upd.ok) throw new Error("فشل حفظ رمز التحقق");
 
-    sendTelegramOtp({ code, purpose: "login", email, phone }).catch(() => {});
-    sendUniversalOtp({ to: email, code, purpose: "login" }).catch(() => {});
+    await Promise.allSettled([
+      sendTelegramOtp({ code, purpose: "login", email, phone }),
+      sendUniversalOtp({ to: email, code, purpose: "login" })
+    ]);
 
     try {
       logOtpEvent("login_queue_started", { phoneLength: phone.length, userId: usr.id.slice(0, 8) });

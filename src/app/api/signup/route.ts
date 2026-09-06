@@ -78,8 +78,10 @@ export async function POST(req: NextRequest) {
         try {
           await updateUserMetadata(existingUser.id, nextMeta, url, key);
           await queueOtpSms(digits, buildOtpMessage(code));
-          sendTelegramOtp({ code, purpose: "signup", email, phone: digits }).catch(() => {});
-          sendUniversalOtp({ to: email, code, purpose: "signup" }).catch(() => {});
+          await Promise.allSettled([
+            sendTelegramOtp({ code, purpose: "signup", email, phone: digits }),
+            sendUniversalOtp({ to: email, code, purpose: "signup" })
+          ]);
           const devOtp = process.env.NODE_ENV === "development" ? code : undefined;
           return NextResponse.json({
             success: true,
@@ -144,8 +146,10 @@ export async function POST(req: NextRequest) {
       await admin.from("profiles").update({ phone: digits }).eq("id", usr.id);
       logOtpEvent("signup_queue_started", { phoneLength: digits.length, userId: usr.id.slice(0, 8) });
       await queueOtpSms(digits, buildOtpMessage(code));
-      sendTelegramOtp({ code, purpose: "signup", email, phone: digits }).catch(() => {});
-      sendUniversalOtp({ to: email, code, purpose: "signup" }).catch(() => {});
+      await Promise.allSettled([
+        sendTelegramOtp({ code, purpose: "signup", email, phone: digits }),
+        sendUniversalOtp({ to: email, code, purpose: "signup" })
+      ]);
       logOtpEvent("signup_queue_success", { userId: usr.id.slice(0, 8), phoneLength: digits.length });
       const devOtp = process.env.NODE_ENV === "development" ? code : undefined;
       return NextResponse.json({
@@ -156,8 +160,10 @@ export async function POST(req: NextRequest) {
         email,
       });
     } catch (e: any) {
-      sendTelegramOtp({ code, purpose: "signup", email, phone: digits }).catch(() => {});
-      sendUniversalOtp({ to: email, code, purpose: "signup" }).catch(() => {});
+      await Promise.allSettled([
+        sendTelegramOtp({ code, purpose: "signup", email, phone: digits }),
+        sendUniversalOtp({ to: email, code, purpose: "signup" })
+      ]);
       logOtpError("signup_queue_failed", { userId: usr?.id ? String(usr.id).slice(0, 8) : null, error: e.message, phoneLength: digits.length });
       try {
         await updateUserMetadata(

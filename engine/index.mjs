@@ -20,7 +20,19 @@ import { rmSync, writeFileSync, readFileSync, existsSync } from "fs";
 import { execFile } from "child_process";
 import path from "path";
 import { fileURLToPath } from "url";
+import { setDefaultResultOrder } from "node:dns";
 import { createSupabaseAuthStore, getSupabase, flushAllCreds } from "./auth-store.mjs";
+
+// CRITICAL: This host has NO IPv6 route, but web.whatsapp.com DNS often returns an
+// IPv6 (AAAA) address first. Node ≥18 uses "verbatim" ordering by default, so Baileys
+// would try IPv6 first, hang, and drop the socket (408 / EAI_AGAIN / "Connection was lost")
+// exactly while a companion is mid-pairing -> WhatsApp stays stuck at "جاري تسجيل الدخول".
+// Force IPv4-first so the WhatsApp websocket always connects deterministically.
+try {
+  setDefaultResultOrder("ipv4first");
+} catch (err) {
+  console.warn("[engine] failed to set DNS order to ipv4first:", err.message);
+}
 
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -428,18 +440,47 @@ async function startBotSession(bot, waVersion, opts = {}) {
 
     if (wantsPairingCode && !isAlreadyRegistered && !is515Restart && bot.status !== "connected") {
       session.state = SessionState.PAIRING;
-      session.setTimeout(async () => {
-        if (session.destroying || session.state === SessionState.CONNECTED || session.pairingRequested) return;
-        session.pairingRequested = true;
-        try {
-          console.log(`[WA][${bot.id}] requesting pairing code for +${digits}...`);
-          const code = await sock.requestPairingCode(digits);
-          await updateBot(bot.id, { pair_code: code, qr: null, status: "pending" });
-          console.log(`[WA][${bot.id}] ✅ Pairing code generated: ${code}`);
-        } catch (err) {
-          console.error(`[WA][${bot.id}] pairing code request failed:`, err.message);
-        }
-      }, 3500);
+
+      // Guard: refuse invalid/placeholder numbers (all zeros, "123", etc.) so the engine
+      // doesn't waste a WhatsApp socket generating codes that can never pair.
+      const looksInvalid = /^0+$/.test(digits) || /^123+$/.test(digits) || digits.length < 10;
+      if (looksInvalid) {
+        console.warn(`[WA][${bot.id}] invalid phone for pairing: +${digits}. Stopping to avoid wasting sockets.`);
+        await updateBot(bot.id, {
+          command: "stop",
+          status: "disconnected",
+          pair_code: null,
+          qr: null,
+          metadata: {
+            last_error: "رقم الواتساب غير صالح (placeholder) — يرجى الربط بالرقم الحقيقي",
+            error_at: new Date().toISOString(),
+          },
+        });
+      } else {
+        session.setTimeout(async () => {
+          if (session.destroying || session.state === SessionState.CONNECTED || session.pairingRequested) return;
+          session.pairingRequested = true;
+          // Retry a few times in case the socket hiccups right at request time —
+          // a single failed attempt must NOT leave the user stuck without a code.
+          for (let attempt = 1; attempt <= 3; attempt++) {
+            if (session.destroying || !session.sock) return;
+            try {
+              console.log(`[WA][${bot.id}] requesting pairing code for +${digits} (attempt ${attempt})...`);
+              const code = await sock.requestPairingCode(digits);
+              if (!code) throw new Error("empty pairing code");
+              session.pairingCode = code;
+              await updateBot(bot.id, { pair_code: code, qr: null, status: "pending" });
+              console.log(`[WA][${bot.id}] ✅ Pairing code generated: ${code}`);
+              break;
+            } catch (err) {
+              console.error(`[WA][${bot.id}] pairing code request failed (attempt ${attempt}/3):`, err.message);
+              if (attempt < 3) {
+                await new Promise((r) => setTimeout(r, 3000));
+              }
+            }
+          }
+        }, 3500);
+      }
     }
 
     // Attach Event Handlers

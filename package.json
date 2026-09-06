@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "engine": "node --env-file=.env.local engine/index.mjs",
+    "engine": "node --dns-result-order=ipv4first --env-file=.env.local engine/index.mjs",
     "db:cleanup": "node --env-file=.env.local scripts/cleanup-database.mjs"
   },
   "dependencies": {
