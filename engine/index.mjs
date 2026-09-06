@@ -697,11 +697,14 @@ async function handleConnectionClose(session, error) {
 
   // Teardown the closed socket instance
   await session.destroy("reconnecting");
-  activeSessions.delete(botId);
+  // CRITICAL FIX: Do NOT delete from activeSessions here. 
+  // If we delete it, reconcileBots will instantly reconnect and bypass the backoff delay, causing rapid crash loops (and eventual 401 ban).
 
   // Auto-reconnect timer
   setTimeout(() => {
-    if (!shutdownRequested && !activeSessions.has(botId)) {
+    // Only restart if the user hasn't explicitly stopped it (in which case it would have been deleted by reconcileBots)
+    // and if the current session in the map is still THIS session.
+    if (!shutdownRequested && activeSessions.get(botId) === session) {
       startBotSession(session.bot, session.waVersion);
     }
   }, backoffMs);
@@ -712,10 +715,10 @@ async function handleSessionFailure(session, err) {
   const backoffMs = getBackoffDelay(session.consecutiveFailures, Boolean(session.bot.linked_number));
   session.state = SessionState.BACKOFF;
   await session.destroy("startup_failed");
-  activeSessions.delete(session.botId);
+  // CRITICAL FIX: Do NOT delete from activeSessions.
 
   setTimeout(() => {
-    if (!shutdownRequested && !activeSessions.has(session.botId)) {
+    if (!shutdownRequested && activeSessions.get(session.botId) === session) {
       startBotSession(session.bot, session.waVersion);
     }
   }, backoffMs);
