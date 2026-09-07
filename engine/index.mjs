@@ -898,6 +898,11 @@ async function handleMessagesUpsert(session, { messages, type }) {
             await addLog(bot.id, "badword_deleted", { chat: m.key.remoteJid, sender: m.key.participant });
           } catch (e) {
             console.warn(`[security][${bot.id}] failed to delete bad word message (needs admin?):`, e.message);
+            try {
+              await sock.sendMessage(m.key.remoteJid, {
+                text: `⚠️ لاحظت رسالة فيها لفظ غير لائق وتم تجاهلها.\nاقصار اللفاظ يتطلب أن أكون *مشرفاً (Admin)* في المجموعة — ارقني حتى أتمكن من الحذف التلقائي.`,
+              }, { quoted: m });
+            } catch {}
           }
           continue; // Skip further processing
         }
