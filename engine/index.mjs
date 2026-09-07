@@ -846,7 +846,7 @@ async function handleConnectionClose(session, error) {
       pair_code: null,
       qr: null,
       linked_number: null,
-      metadata: { last_error: "pair_code_dead — يُرجى الاقتران مجددًا", error_at: new Date().toISOString(), attempt: 0 },
+      metadata: { last_error: "code 428 — pair_code_dead — يُرجى الاقتران مجددًا", error_at: new Date().toISOString(), attempt: 0 },
     });
     await addLog(botId, "pair_code_dead_force_pairing", { failures: session.consecutiveFailures });
     startBotSession(session.bot, session.waVersion);
