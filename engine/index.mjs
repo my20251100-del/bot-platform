@@ -21,7 +21,7 @@ import { rmSync, writeFileSync, readFileSync, existsSync } from "fs";
 import { execFile } from "child_process";
 import path from "path";
 import { fileURLToPath } from "url";
-import { setDefaultResultOrder } from "node:dns";
+import { setDefaultResultOrder, getDefaultResultOrder } from "node:dns";
 import { createSupabaseAuthStore, getSupabase, flushAllCreds } from "./auth-store.mjs";
 
 // CRITICAL: This host has NO IPv6 route, but web.whatsapp.com DNS often returns an
@@ -33,6 +33,22 @@ try {
   setDefaultResultOrder("ipv4first");
 } catch (err) {
   console.warn("[engine] failed to set DNS order to ipv4first:", err.message);
+}
+// Hard fallback: if the above is ignored (some Node/Baileys paths bypass it),
+// force dns.lookup to always use family 4 so no IPv6 hang can ever occur.
+try {
+  const dnsMod = await import("node:dns");
+  const _lookup = dnsMod.lookup.bind(dnsMod);
+  dnsMod.lookup = function lookupIPv4(host, options, cb) {
+    if (typeof options === "function") { cb = options; options = {}; }
+    if (typeof options === "string") options = { family: options === "6" ? 6 : 4 };
+    if (!options || typeof options !== "object") options = { family: 4 };
+    if (options.family === undefined) options.family = 4;
+    return _lookup(host, options, cb);
+  };
+  console.log("[engine] DNS forced to IPv4 (lookup override). order:", getDefaultResultOrder?.());
+} catch (err) {
+  console.warn("[engine] DNS lookup override failed:", err.message);
 }
 
 const execFileAsync = promisify(execFile);
