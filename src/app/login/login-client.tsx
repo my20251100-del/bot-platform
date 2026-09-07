@@ -337,11 +337,11 @@ export default function LoginClient() {
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="mb-1.5 block text-sm font-medium text-muted">البريد الإلكتروني</label>
+                <label className="mb-1.5 block text-sm font-medium text-muted">البريد الإلكتروني أو رقم الهاتف</label>
                 <input
-                  type="email"
+                  type="text"
                   dir="ltr"
-                  placeholder="you@example.com"
+                  placeholder="you@example.com أو 967xxxxxxxxx"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
