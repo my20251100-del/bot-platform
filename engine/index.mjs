@@ -829,6 +829,30 @@ async function handleConnectionClose(session, error) {
     return;
   }
 
+  // 4.y A pair_code bot that failed to reconnect ≥2× has dead creds — force fresh pairing.
+  if (bot.link_method === "pair_code" && session.consecutiveFailures >= 2) {
+    console.log(`[WA][${botId}] pair_code bot failed ${session.consecutiveFailures}× — forcing fresh pairing...`);
+    await session.destroy("pair_code_dead");
+    activeSessions.delete(botId);
+    if (typeof session.clearStore === "function") {
+      try { await session.clearStore(); } catch {}
+    } else {
+      try { await supabase.from("bot_auth").delete().eq("bot_id", botId); } catch {}
+      try { await supabase.from("bot_keys").delete().eq("bot_id", botId); } catch {}
+    }
+    await updateBot(botId, {
+      status: "pending",
+      command: "start",
+      pair_code: null,
+      qr: null,
+      linked_number: null,
+      metadata: { last_error: "pair_code_dead — يُرجى الاقتران مجددًا", error_at: new Date().toISOString(), attempt: 0 },
+    });
+    await addLog(botId, "pair_code_dead_force_pairing", { failures: session.consecutiveFailures });
+    startBotSession(session.bot, session.waVersion);
+    return;
+  }
+
   // 4. Transient / Network Drops / 408 / 428 on Linked Bots
   session.consecutiveFailures++;
   const backoffMs = getBackoffDelay(session.consecutiveFailures, isRegistered);
