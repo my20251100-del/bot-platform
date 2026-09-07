@@ -75,41 +75,41 @@ export default function SiteHeaderClient({ user }: SiteHeaderClientProps) {
             </div>
 
             {botDropdownOpen && (
-              <div className="absolute top-full start-0 z-50 mt-1.5 w-48 rounded-2xl border border-border/80 bg-surface/95 p-1.5 shadow-2xl backdrop-blur-xl animate-in fade-in slide-in-from-top-2">
+              <div className="absolute top-full start-0 z-50 mt-1.5 w-52 rounded-2xl border border-border/80 bg-surface/95 p-1.5 shadow-2xl backdrop-blur-xl animate-in fade-in slide-in-from-top-2">
                 <Link
                   href="/bot"
-                  className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-white hover:bg-elevated hover:text-accent"
+                  className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-semibold text-fg hover:bg-elevated hover:text-accent transition"
                 >
                   <span>🤖</span>
-                  <span>{t("The Mini Bot (الرئيسية)")}</span>
+                  <span>{t("لوحة البوت")}</span>
                 </Link>
                 <Link
                   href="/bot/create"
-                  className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold text-accent hover:bg-accent/15"
+                  className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-bold text-accent hover:bg-accent/15 transition"
                 >
                   <span>🚀</span>
-                  <span>{t("Deploy Now (ربط الآن)")}</span>
+                  <span>{t("ربط بوت جديد")}</span>
                 </Link>
                 <Link
                   href="/bot/setting"
-                  className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-white hover:bg-elevated hover:text-accent"
+                  className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-semibold text-fg hover:bg-elevated hover:text-accent transition"
                 >
                   <span>⚙️</span>
-                  <span>{t("Settings (الإعدادات)")}</span>
+                  <span>{t("لوحة التحكم والإعدادات")}</span>
                 </Link>
                 <Link
-                  href="/bot/autoreply"
-                  className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-white hover:bg-elevated hover:text-accent"
+                  href="/bot/setting#section-autoreply"
+                  className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-semibold text-fg hover:bg-elevated hover:text-accent transition"
                 >
                   <span>💬</span>
-                  <span>{t("Auto Reply (الرد الآلي)")}</span>
+                  <span>{t("الرد التلقائي")}</span>
                 </Link>
                 <Link
-                  href="/bot/contact"
-                  className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-white hover:bg-elevated hover:text-accent"
+                  href="/bot/setting#section-contact"
+                  className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-semibold text-fg hover:bg-elevated hover:text-accent transition"
                 >
                   <span>📇</span>
-                  <span>{t("Auto Save (حفظ الأرقام)")}</span>
+                  <span>{t("حفظ جهات الاتصال")}</span>
                 </Link>
               </div>
             )}

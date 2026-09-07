@@ -376,32 +376,59 @@ function AutoReplyCore({ embedded }: { embedded?: { number: string; secret: stri
 
   return (
     <div className={embedded ? "w-full" : "mx-auto max-w-4xl px-4 py-12 sm:py-16"}>
-      <header className={embedded ? "mb-8 flex flex-col items-center text-center animate-fade-up" : "mb-12 flex flex-col items-center text-center animate-fade-up"}>
-        <button
-          type="button"
-          onClick={toggleSystem}
-          className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold transition ${
-            systemActive
-              ? "border-accent/30 bg-accent-soft text-accent"
-              : "border-danger/40 bg-danger/10 text-danger"
-          }`}
-        >
-          <span className={`h-2 w-2 rounded-full ${systemActive ? "bg-accent animate-ping" : "bg-danger"}`} />
-          {systemActive ? t("نشط") : t("غير نشط")}
-        </button>
-        <h1 className="mt-4 font-display text-2xl font-bold sm:text-3xl">{t("مدير الرد التلقائي")}</h1>
-        {session?.name && <p className="mt-1 text-xs text-muted/70">{session.name}</p>}
-        <p className="mt-1 text-sm text-muted">
-          {locale === "en"
-            ? `${replies.length} replies ready · ${activeCount} active`
-            : `${replies.length} رد مُعد · ${activeCount} نشط`}
-        </p>
-        <p className="mt-2 max-w-md text-center text-xs text-muted/70">
-          {t("جرّب الرد من رقم آخر: البوت لا يرد على الرسائل الآتية من رقمه نفسه.")}
-        </p>
-      </header>
+      {!embedded ? (
+        <header className="mb-12 flex flex-col items-center text-center animate-fade-up">
+          <button
+            type="button"
+            onClick={toggleSystem}
+            className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold transition ${
+              systemActive
+                ? "border-accent/30 bg-accent-soft text-accent"
+                : "border-danger/40 bg-danger/10 text-danger"
+            }`}
+          >
+            <span className={`h-2 w-2 rounded-full ${systemActive ? "bg-accent animate-ping" : "bg-danger"}`} />
+            {systemActive ? t("نشط") : t("غير نشط")}
+          </button>
+          <h1 className="mt-4 font-display text-2xl font-bold sm:text-3xl">{t("مدير الرد التلقائي")}</h1>
+          {session?.name && <p className="mt-1 text-xs text-muted/70">{session.name}</p>}
+          <p className="mt-1 text-sm text-muted">
+            {locale === "en"
+              ? `${replies.length} replies ready · ${activeCount} active`
+              : `${replies.length} رد مُعد · ${activeCount} نشط`}
+          </p>
+          <p className="mt-2 max-w-md text-center text-xs text-muted/70">
+            {t("جرّب الرد من رقم آخر: البوت لا يرد على الرسائل الآتية من رقمه نفسه.")}
+          </p>
+        </header>
+      ) : (
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/60 bg-elevated/40 p-3">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={toggleSystem}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold transition ${
+                systemActive
+                  ? "border-accent/30 bg-accent-soft text-accent"
+                  : "border-danger/40 bg-danger/10 text-danger"
+              }`}
+            >
+              <span className={`h-2 w-2 rounded-full ${systemActive ? "bg-accent animate-ping" : "bg-danger"}`} />
+              {systemActive ? t("الرد التلقائي: شغال") : t("الرد التلقائي: متوقف")}
+            </button>
+            <span className="text-xs text-muted font-medium">
+              {locale === "en"
+                ? `${replies.length} replies · ${activeCount} active`
+                : `${replies.length} رد مُعد · ${activeCount} نشط`}
+            </span>
+          </div>
+          <p className="text-[11px] text-muted/70">
+            {t("البوت يتجاهل رسائله الذاتية تلقائياً لمنع التكرار")}
+          </p>
+        </div>
+      )}
 
-      <div className="mb-14 flex flex-wrap justify-center gap-3">
+      <div className={embedded ? "mb-6 flex flex-wrap justify-center gap-2.5" : "mb-14 flex flex-wrap justify-center gap-3"}>
         <button
           type="button"
           onClick={openNew}

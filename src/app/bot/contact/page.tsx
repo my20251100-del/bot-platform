@@ -187,25 +187,27 @@ function ContactCore({ embedded }: { embedded?: { number: string; secret: string
 
   return (
     <div className={embedded ? "w-full" : "mx-auto max-w-4xl px-4 py-12 sm:py-16"}>
-      <div className="space-y-10">
-        <header className="mb-2 flex flex-col items-center text-center animate-fade-up">
-          <span
-            className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold ${
-              connected ? "border-accent/30 bg-accent-soft text-accent" : "border-danger/40 bg-danger/10 text-danger"
-            }`}
-          >
-            <span className={`h-2 w-2 rounded-full ${connected ? "bg-accent animate-ping" : "bg-danger"}`} />
-            {connected ? t("متصل ✓") : t("غير متصل ✗")}
-          </span>
-          <h1 className="mt-4 font-display text-2xl font-bold sm:text-3xl">{t("حفظ جهات الاتصال تلقائياً")}</h1>
-          <p className="mt-1 text-sm text-muted">
-            {session.name
-              ? locale === "en"
-                ? <>Bot “{session.name}” synced successfully.</>
-                : <>تمت مزامنة البوت «{session.name}» بنجاح.</>
-              : t("تمت مزامنة البوت بنجاح.")}
-          </p>
-        </header>
+      <div className={embedded ? "space-y-6" : "space-y-10"}>
+        {!embedded && (
+          <header className="mb-2 flex flex-col items-center text-center animate-fade-up">
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold ${
+                connected ? "border-accent/30 bg-accent-soft text-accent" : "border-danger/40 bg-danger/10 text-danger"
+              }`}
+            >
+              <span className={`h-2 w-2 rounded-full ${connected ? "bg-accent animate-ping" : "bg-danger"}`} />
+              {connected ? t("متصل ✓") : t("غير متصل ✗")}
+            </span>
+            <h1 className="mt-4 font-display text-2xl font-bold sm:text-3xl">{t("حفظ جهات الاتصال تلقائياً")}</h1>
+            <p className="mt-1 text-sm text-muted">
+              {session.name
+                ? locale === "en"
+                  ? <>Bot “{session.name}” synced successfully.</>
+                  : <>تمت مزامنة البوت «{session.name}» بنجاح.</>
+                : t("تمت مزامنة البوت بنجاح.")}
+            </p>
+          </header>
+        )}
 
         <div className="card p-6 animate-fade-in sm:p-8">
           <div className="flex items-center justify-between border-b border-border/60 pb-4">
