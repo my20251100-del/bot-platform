@@ -422,7 +422,14 @@ async function startBotSession(bot, waVersion, opts = {}) {
 
     // Pairing code or QR determination
     const rawPhone = bot.phone || bot.linked_number || "";
-    const digits = rawPhone.replace(/\D/g, "");
+    let digits = rawPhone.replace(/\D/g, "").replace(/^0+/, "");
+    if (digits.length === 9 && /^7[0-9]{8}$/.test(digits)) {
+      digits = "967" + digits;
+    } else if (digits.length === 9 && /^5[0-9]{8}$/.test(digits)) {
+      digits = "966" + digits;
+    } else if (digits.length === 10 && /^1[0125][0-9]{8}$/.test(digits)) {
+      digits = "20" + digits;
+    }
     const wantsPairingCode = bot.link_method === "pair_code" && digits.length >= 10;
     const isAlreadyRegistered = Boolean(state?.creds?.registered);
     const is515Restart = Boolean(opts?.is515Restart);
