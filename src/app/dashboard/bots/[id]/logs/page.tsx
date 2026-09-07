@@ -40,8 +40,14 @@ export default async function LogsPage({
   const { id } = await params;
   const supabase = await createClient();
 
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) notFound();
+
   const [{ data: bot }, { data: logs }] = await Promise.all([
-    supabase.from("bots").select("name").eq("id", id).single(),
+    supabase.from("bots").select("name").eq("id", id).eq("user_id", user.id).single(),
     supabase
       .from("bot_logs")
       .select("*")

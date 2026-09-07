@@ -38,8 +38,10 @@ export default function DashboardLive({
   referralCode: string | null;
 }) {
   const dayIndex = new Date().getDate() % tips.length;
-  const connectedCount = bots.filter((b) => b.status === "connected").length;
+  const isLive = (b: any) => b?.live || b?.status === "connected";
+  const connectedCount = bots.filter(isLive).length;
   const activePct = bots.length ? Math.round((connectedCount / bots.length) * 100) : 0;
+  const statusFor = (b: any) => (isLive(b) ? "connected" : b.status);
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -196,8 +198,8 @@ export default function DashboardLive({
               <div>
                 <div className="flex items-center gap-3">
                   <h3 className="font-semibold">{bot.name}</h3>
-                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${statusStyles[bot.status]}`}>
-                    {statusLabels[bot.status] ?? bot.status}
+                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${statusStyles[statusFor(bot)]}`}>
+                    {isLive(bot) ? "متصل الآن" : (statusLabels[bot.status] ?? bot.status)}
                   </span>
                 </div>
                 <p className="mt-1 text-sm text-muted">

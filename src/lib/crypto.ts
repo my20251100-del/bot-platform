@@ -10,8 +10,10 @@ const AUTH_TAG_LENGTH = 16; // 128 bits auth tag
  * ممنوع تسريب المفتاح إلى Frontend أو الكود المصدري
  */
 function getEncryptionKey(): Buffer {
-  const secret = process.env.ENCRYPTION_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || "bot-platform-secure-aes256-master-key-32b";
-  // اشتقاق مفتاح بطول 32 بايت (256-bit) باستخدام SHA-256
+  const secret = process.env.ENCRYPTION_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!secret) {
+    throw new Error("ENCRYPTION_KEY أو SUPABASE_SERVICE_ROLE_KEY غير مُعرّف — لا يمكن بدء التشفير بأمان");
+  }
   return crypto.createHash("sha256").update(secret).digest();
 }
 

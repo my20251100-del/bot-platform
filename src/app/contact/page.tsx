@@ -1,12 +1,16 @@
 import SiteHeader from "@/components/site-header";
 import SiteFooter from "@/components/site-footer";
+import { getServerLocale } from "@/lib/server-locale";
+import { tr } from "@/lib/i18n";
 
 export const metadata = {
   title: "اتصل بنا — بوت برو | التواصل المباشر مع الإدارة",
   description: "تواصل مباشرة مع صاحب المنصة محمد حاتم عبر واتساب على الرقم 772847565 أو عبر الاتصال الهاتفي والبريد الإلكتروني 24/7.",
 };
 
-export default function ContactPage() {
+export default async function ContactPage() {
+  const locale = await getServerLocale();
+  const t = (s: string) => tr(locale, s);
   return (
     <div className="flex min-h-dvh flex-col bg-bg">
       <SiteHeader />
@@ -26,10 +30,14 @@ export default function ContactPage() {
             </span>
 
             <h1 className="cyber-title text-3xl font-extrabold sm:text-5xl">
-              تواصل مع <span className="bg-gradient-to-r from-accent via-neon to-emerald-400 bg-clip-text text-transparent">صاحب المنصة</span>
+              {locale === "ar" ? (
+                <>تواصل مع <span className="bg-gradient-to-r from-accent via-neon to-emerald-400 bg-clip-text text-transparent">صاحب المنصة</span></>
+              ) : (
+                <>Contact the <span className="bg-gradient-to-r from-accent via-neon to-emerald-400 bg-clip-text text-transparent">Platform Owner</span></>
+              )}
             </h1>
             <p className="mt-4 text-base sm:text-lg text-muted max-w-2xl mx-auto leading-relaxed">
-              نحن هنا لمساعدتك في تفعيل اشتراكك، ربط بوتك، وتخصيص كافة ميزاتك الذكية. تواصل مباشرة مع الإدارة:
+              {t("نحن هنا لمساعدتك في تفعيل اشتراكك، ربط بوتك، وتخصيص كافة ميزاتك الذكية. تواصل مباشرة مع الإدارة:")}
             </p>
           </div>
 

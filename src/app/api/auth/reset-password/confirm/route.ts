@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { rateLimit, clientIp } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -26,6 +27,16 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const ip = clientIp(req);
+    const perEmail = rateLimit({ key: `resetconfirm:${cleanEmail}`, limit: 10, windowMs: 15 * 60 * 1000 });
+    const perIp = rateLimit({ key: `resetconfirm:ip:${ip}`, limit: 40, windowMs: 15 * 60 * 1000 });
+    if (!perEmail.ok || !perIp.ok) {
+      return NextResponse.json(
+        { success: false, message: "محاولات كثيرة، حاول بعد قليل" },
+        { status: 429 }
+      );
+    }
+
     const admin = createAdmin();
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
     const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -40,8 +51,8 @@ export async function POST(req: NextRequest) {
 
     if (!usr?.id) {
       return NextResponse.json(
-        { success: false, message: "المستخدم غير موجود" },
-        { status: 404 }
+        { success: false, message: "لا يوجد طلب استعادة معلّق لهذا البريد" },
+        { status: 400 }
       );
     }
 
@@ -78,7 +89,7 @@ export async function POST(req: NextRequest) {
 
     if (updateError) {
       return NextResponse.json(
-        { success: false, message: `تعذر تحديث كلمة المرور: ${updateError.message}` },
+        { success: false, message: "تعذر تحديث كلمة المرور، يرجى المحاولة مجدداً" },
         { status: 500 }
       );
     }
@@ -94,9 +105,9 @@ export async function POST(req: NextRequest) {
       success: true,
       message: "تم تعيين كلمة المرور الجديدة بنجاح! جارٍ تحويلك للوحة التحكم...",
     });
-  } catch (e: any) {
+  } catch {
     return NextResponse.json(
-      { success: false, message: e.message || "حدث خطأ غير متوقع" },
+      { success: false, message: "حدث خطأ غير متوقع" },
       { status: 500 }
     );
   }

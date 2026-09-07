@@ -44,6 +44,12 @@ export async function POST(req: NextRequest) {
     // حفظ الإعدادات من بوابة العميل
     if (action === "update" && settings && typeof settings === "object") {
       const next = { ...(bot.settings || {}), ...settings, secret: bot.settings.secret };
+      // تطبيع قائمة الكلمات المحظورة إلى مصفوفة دائماً، وتفعيل القاموس افتراضياً
+      const banned = Array.isArray(next.bannedWords)
+        ? next.bannedWords
+        : String(next.bannedWords || "").split(/[\n,،]/).map((w: string) => w.trim()).filter(Boolean);
+      next.bannedWords = banned;
+      next.dictionaryOn = next.dictionaryOn !== false;
       const { error: upErr } = await admin
         .from("bots")
         .update({ settings: next })

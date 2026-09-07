@@ -10,19 +10,20 @@ export async function GET(req: NextRequest) {
     const admin = createAdmin();
 
     // 1. Database Health Check & Latency
-    const { data: bots, error: dbErr } = await admin
-      .from("bots")
-      .select("id, status, command, updated_at")
-      .limit(100);
+    const [botCount, botsStatus] = await Promise.all([
+      admin.from("bots").select("id", { count: "exact", head: true }),
+      admin.from("bots").select("status, command"),
+    ]);
 
     const dbLatencyMs = Date.now() - startTime;
-    const databaseStatus = dbErr ? "down" : "healthy";
+    const databaseStatus = botCount.error ? "down" : "healthy";
 
     // 2. Metrics from Database
-    const totalBots = bots?.length || 0;
-    const connectedBots = bots?.filter((b) => b.status === "connected").length || 0;
-    const pendingBots = bots?.filter((b) => b.status === "pending").length || 0;
-    const activeCommandBots = bots?.filter((b) => b.command === "start").length || 0;
+    const totalBots = botCount.count || 0;
+    const list = botsStatus.data || [];
+    const connectedBots = list.filter((b) => b.status === "connected").length;
+    const pendingBots = list.filter((b) => b.status === "pending").length;
+    const activeCommandBots = list.filter((b) => b.command === "start").length;
 
     // 3. Process & Memory Metrics
     const memUsage = process.memoryUsage();
@@ -41,7 +42,7 @@ export async function GET(req: NextRequest) {
       database: {
         status: databaseStatus,
         latencyMs: dbLatencyMs,
-        error: dbErr ? dbErr.message : null,
+        error: botCount.error ? botCount.error.message : null,
       },
       bots: {
         total: totalBots,

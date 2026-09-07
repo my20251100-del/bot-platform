@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdmin } from "@/lib/supabase/admin";
 import { normalizePhoneNumber } from "@/lib/phone";
 import { logOtpEvent, logOtpError } from "@/lib/otp-logger";
+import { rateLimit, clientIp } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -15,6 +16,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, code: "INVALID_INPUT", message: "بيانات ناقصة" }, { status: 400 });
 
     const digits = normalizePhoneNumber(phone);
+    const ip = clientIp(req);
+    const perEmail = rateLimit({ key: `signupverify:${String(email).toLowerCase()}`, limit: 12, windowMs: 15 * 60 * 1000 });
+    const perIp = rateLimit({ key: `signupverify:ip:${ip}`, limit: 40, windowMs: 15 * 60 * 1000 });
+    if (!perEmail.ok || !perIp.ok) {
+      return NextResponse.json({ success: false, code: "RATE_LIMITED", message: "محاولات كثيرة، حاول بعد قليل" }, { status: 429 });
+    }
+
     const admin = createAdmin();
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
     const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -26,7 +34,7 @@ export async function POST(req: NextRequest) {
     const list = await r.json();
     const usr = Array.isArray(list?.users) ? list.users.find((u: any) => u.email === email) : null;
     if (!usr?.id)
-      return NextResponse.json({ success: false, code: "USER_NOT_FOUND", message: "الحساب غير موجود" }, { status: 404 });
+      return NextResponse.json({ success: false, code: "USER_NOT_FOUND", message: "لا يوجد حساب بهذا البريد أو لم يكتمل التسجيل" }, { status: 400 });
 
     const meta = usr.user_metadata || {};
     const pending = meta.pending_otp;
@@ -89,6 +97,6 @@ ${appUrl}/bot/create
     return NextResponse.json({ success: true, message: "تم تأكيد الحساب بنجاح" });
   } catch (e: any) {
     logOtpError("signup_verify_failed", { error: e.message });
-    return NextResponse.json({ success: false, code: "VERIFY_FAILED", message: e.message || "حدث خطأ أثناء التحقق" }, { status: 500 });
+    return NextResponse.json({ success: false, code: "VERIFY_FAILED", message: "حدث خطأ أثناء التحقق" }, { status: 500 });
   }
 }

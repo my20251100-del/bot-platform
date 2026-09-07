@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdmin } from "@/lib/supabase/admin";
+import { isAdminUser } from "@/lib/admin";
 import { normalizePhoneNumber } from "@/lib/phone";
 
 export const runtime = "nodejs";
@@ -25,15 +26,18 @@ export async function POST(req: NextRequest) {
 
     const admin = createAdmin();
 
-    // التحقق من ملكية البوت
+    // التحقق من ملكية البوت أو صلاحية الأدمن (ملكية + إدارة بوتات الآخرين)
     const { data: bot, error: botErr } = await admin
       .from("bots")
       .select("*")
       .eq("id", botId)
-      .eq("user_id", user.id)
       .single();
 
     if (botErr || !bot) {
+      return NextResponse.json({ error: "البوت غير موجود أو ليس لديك صلاحية" }, { status: 404 });
+    }
+
+    if (bot.user_id !== user.id && !isAdminUser(user)) {
       return NextResponse.json({ error: "البوت غير موجود أو ليس لديك صلاحية" }, { status: 404 });
     }
 

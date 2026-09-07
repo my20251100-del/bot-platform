@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Cairo, Share_Tech_Mono } from "next/font/google";
 import Providers from "@/components/providers";
+import { getServerLocale } from "@/lib/server-locale";
+import { dirFor } from "@/lib/i18n";
 import "./globals.css";
 
 const cairo = Cairo({
@@ -20,17 +22,18 @@ export const metadata: Metadata = {
     "منصة Hatem X لأتمتة واتساب سحابياً. مضاد حذف الرسائل والوسائط، مضاد عرض مرة واحدة، ردود ذكية بالذكاء الاصطناعي، وتحكم بالخصوصية 24/7.",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  const locale = await getServerLocale();
   return (
     <html
-      lang="ar"
-      dir="rtl"
+      lang={locale}
+      dir={dirFor(locale)}
       className={`${cairo.variable} ${tech.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col font-sans">
-        <Providers>{children}</Providers>
+        <Providers initialLocale={locale}>{children}</Providers>
       </body>
     </html>
   );

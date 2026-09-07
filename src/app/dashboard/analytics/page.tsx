@@ -18,6 +18,7 @@ interface StatData {
     connectedBots: number;
     pendingBots: number;
     stoppedBots: number;
+    totalLogs: number;
     smartReplies: number;
     statusInteractions: number;
     antiDeleteRecovered: number;
@@ -32,6 +33,7 @@ interface StatData {
     linkedNumber: string | null;
     status: string;
     command: string;
+    live: boolean;
     pairCode: string | null;
     updatedAt: string;
     model: string;
@@ -57,11 +59,11 @@ export default function AdminAnalyticsPage() {
   const [error, setError] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
-  const [pin, setPin] = useState("1933");
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
-      const res = await fetch(`/api/admin/stats?pin=${encodeURIComponent(pin)}`);
+      const res = await fetch(`/api/admin/stats`);
       if (!res.ok) {
         const errJson = await res.json();
         throw new Error(errJson.error || "تعذر جلب البيانات");
@@ -75,7 +77,7 @@ export default function AdminAnalyticsPage() {
     } finally {
       setLoading(false);
     }
-  }, [pin]);
+  }, []);
 
   useEffect(() => {
     fetchData();
@@ -83,6 +85,43 @@ export default function AdminAnalyticsPage() {
     const interval = setInterval(fetchData, 4000);
     return () => clearInterval(interval);
   }, [fetchData, autoRefresh]);
+
+  const runAction = async (botId: string, action: "start" | "stop") => {
+    setBusyId(botId);
+    try {
+      const res = await fetch(`/api/bot/${botId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ command: action }),
+      });
+      if (!res.ok) {
+        const errJson = await res.json();
+        throw new Error(errJson.error || "فشل تنفيذ الإجراء");
+      }
+      await fetchData();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const removeBot = async (botId: string, botName: string) => {
+    if (!window.confirm(`حذف البوت «${botName}» نهائياً؟ لا يمكن التراجع.`)) return;
+    setBusyId(botId);
+    try {
+      const res = await fetch(`/api/bot/${botId}`, { method: "DELETE" });
+      if (!res.ok) {
+        const errJson = await res.json();
+        throw new Error(errJson.error || "فشل حذف البوت");
+      }
+      await fetchData();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setBusyId(null);
+    }
+  };
 
   const eventBadge = (event: string) => {
     switch (event) {
@@ -164,9 +203,9 @@ export default function AdminAnalyticsPage() {
               تحديث
             </button>
 
-            {/* Admin PIN quick badge */}
+            {/* Admin authenticated badge */}
             <span className="rounded-xl border border-zinc-700 bg-zinc-800/80 px-2.5 py-1 text-[11px] font-mono text-zinc-300">
-              🔒 Admin Mode
+              🔒 صلاحيات الأدمن (خادم)
             </span>
           </div>
         </div>
@@ -257,7 +296,7 @@ export default function AdminAnalyticsPage() {
             </span>
           </div>
           <p className="mt-2 text-[11px] text-muted">
-            الرقم المربوط النشط: +967772847565
+            إجمالي الأحداث المسجلة: <span className="font-bold text-white">{data?.kpis?.totalLogs ?? 0}</span>
           </p>
         </div>
 
@@ -282,7 +321,7 @@ export default function AdminAnalyticsPage() {
               gemini-3.1-flash-lite
             </span>
             <span className="rounded-lg bg-zinc-800 px-2 py-0.5 text-muted">
-              4 مفاتيح نشطة ⚡
+              {data?.bots?.reduce((a, b) => a + (b.keysCount || 0), 0) ?? 0} مفاتيح مفعّلة إجمالاً
             </span>
           </div>
           <p className="mt-2 text-[11px] text-muted">
@@ -373,16 +412,16 @@ export default function AdminAnalyticsPage() {
               {(data?.bots || []).map((b) => (
                 <tr key={b.id} className="hover:bg-elevated/40 transition">
                   <td className="py-3.5 px-3 font-bold text-white flex items-center gap-2">
-                    <span className={`h-2 w-2 rounded-full ${b.status === "connected" ? "bg-emerald-400 shadow-[0_0_6px_#10b981]" : "bg-amber-400"}`} />
+                    <span className={`h-2 w-2 rounded-full ${b.live ? "bg-emerald-400 shadow-[0_0_6px_#10b981] animate-pulse" : "bg-amber-400"}`} />
                     {b.name}
                   </td>
                   <td className="py-3.5 px-3 font-mono" dir="ltr">
                     {b.linkedNumber ? `+${b.linkedNumber}` : b.phone ? `+${b.phone}` : "--"}
                   </td>
                   <td className="py-3.5 px-3">
-                    {b.status === "connected" ? (
+                    {b.live ? (
                       <span className="rounded-full bg-emerald-500/20 border border-emerald-500/40 px-2.5 py-1 text-[11px] font-bold text-emerald-400">
-                        متصل 24/7 ✓
+                        متصل الآن ✓
                       </span>
                     ) : b.status === "pending" ? (
                       <span className="rounded-full bg-amber-500/20 border border-amber-500/40 px-2.5 py-1 text-[11px] font-bold text-amber-400">
@@ -411,13 +450,35 @@ export default function AdminAnalyticsPage() {
                     {b.pairCode ? b.pairCode : "--"}
                   </td>
                   <td className="py-3.5 px-3">
-                    <Link
-                      href={`/dashboard/bots/${b.id}`}
-                      className="rounded-lg border border-border bg-elevated hover:bg-border px-2.5 py-1 text-xs font-semibold transition"
-                    >
-                      إدارة ⚙️
-                    </Link>
-                  </td>
+  <div className="flex items-center gap-1.5">
+    <Link
+      href={`/dashboard/bots/${b.id}`}
+      className="rounded-lg border border-border bg-elevated hover:bg-border px-2.5 py-1 text-xs font-semibold transition"
+    >
+      ⚙️
+    </Link>
+    <button
+      type="button"
+      disabled={busyId === b.id}
+      onClick={() => runAction(b.id, b.live ? "stop" : "start")}
+      className={`rounded-lg border px-2.5 py-1 text-xs font-semibold transition disabled:opacity-50 ${
+        b.live
+          ? "border-red-500/40 bg-red-500/15 text-red-400 hover:bg-red-500/25"
+          : "border-emerald-500/40 bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25"
+      }`}
+    >
+      {b.live ? "⏹ إيقاف" : "▶️ تشغيل"}
+    </button>
+    <button
+      type="button"
+      disabled={busyId === b.id}
+      onClick={() => removeBot(b.id, b.name)}
+      className="rounded-lg border border-red-500/40 bg-red-500/10 px-2.5 py-1 text-xs font-semibold text-red-400 transition hover:bg-red-500/20 disabled:opacity-50"
+    >
+      🗑️ حذف
+    </button>
+  </div>
+</td>
                 </tr>
               ))}
             </tbody>

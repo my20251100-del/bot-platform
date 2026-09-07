@@ -43,6 +43,23 @@ export default function ConnectPage() {
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [countdown, setCountdown] = useState(120);
+  const [connectToken, setConnectToken] = useState<string | null>(() => {
+    if (typeof window !== "undefined") {
+      const sp = new URLSearchParams(window.location.search);
+      const p = (sp.get("phone") || sp.get("number") || "").replace(/\D/g, "");
+      return p ? localStorage.getItem(`wa_token_${p}`) : null;
+    }
+    return null;
+  });
+
+  const getToken = (clean: string) => connectToken || (typeof window !== "undefined" ? localStorage.getItem(`wa_token_${clean}`) : null);
+  const saveToken = (clean: string, token: string | null) => {
+    setConnectToken(token);
+    if (typeof window !== "undefined") {
+      if (token) localStorage.setItem(`wa_token_${clean}`, token);
+      else localStorage.removeItem(`wa_token_${clean}`);
+    }
+  };
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -84,7 +101,8 @@ export default function ConnectPage() {
     async (num: string, silent = false) => {
       try {
         const clean = num.replace(/\D/g, "");
-        const res = await fetch(`/api/connect?number=${encodeURIComponent(clean)}`);
+        const token = getToken(clean);
+        const res = await fetch(`/api/connect?number=${encodeURIComponent(clean)}${token ? `&token=${encodeURIComponent(token)}` : ""}`);
         const data = await res.json();
         if (!data.ok) {
           if (!silent) failLink(data.error || "لم نجد بوتاً لهذا الرقم");
@@ -124,10 +142,11 @@ export default function ConnectPage() {
     setCountdown(120);
 
     try {
+      const token = getToken(cleanNumber);
       const res = await fetch("/api/connect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ number: cleanNumber, action: "start", name: botName }),
+        body: JSON.stringify({ number: cleanNumber, action: "start", name: botName, token }),
       });
       const data = await res.json();
       if (!res.ok || !data.ok) {
@@ -137,6 +156,7 @@ export default function ConnectPage() {
         return;
       }
 
+      if (data.connectToken) saveToken(cleanNumber, data.connectToken);
       setBot(data.bot);
       setStep("linking");
 

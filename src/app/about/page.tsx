@@ -1,16 +1,20 @@
 import Link from "next/link";
 import SiteHeader from "@/components/site-header";
 import SiteFooter from "@/components/site-footer";
+import { getServerLocale } from "@/lib/server-locale";
+import { tr } from "@/lib/i18n";
 
-export default function AboutPage() {
+export default async function AboutPage() {
+  const locale = await getServerLocale();
+  const t = (s: string) => tr(locale, s);
   return (
     <div className="flex min-h-dvh flex-col">
       <SiteHeader />
       <main className="flex-1">
         <div className="mx-auto max-w-4xl px-4 py-14 sm:px-6 sm:py-20">
           <div className="reveal text-center">
-            <h1 className="cyber-title text-3xl font-bold sm:text-4xl">حول بوت برو</h1>
-            <p className="mt-3 text-muted">منصة نمو قنوات واتساب.</p>
+            <h1 className="cyber-title text-3xl font-bold sm:text-4xl">{t("حول بوت برو")}</h1>
+            <p className="mt-3 text-muted">{t("منصة نمو قنوات واتساب.")}</p>
           </div>
 
           <div className="mt-12 space-y-6">
@@ -72,11 +76,11 @@ export default function AboutPage() {
 
             <div className="card p-8 text-center reveal relative overflow-hidden">
               <div className="pointer-events-none absolute -top-20 left-1/4 h-40 w-40 rounded-full bg-accent/10 blur-3xl" />
-              <h2 className="text-xl font-bold">جاهز للانضمام؟</h2>
-              <p className="mt-2 text-sm text-muted">ابدأ نمو قناتك اليوم مجاناً.</p>
+              <h2 className="text-xl font-bold">{t("جاهز للانضمام؟")}</h2>
+              <p className="mt-2 text-sm text-muted">{t("ابدأ نمو قناتك اليوم مجاناً.")}</p>
               <div className="mt-6 flex justify-center gap-3">
-                <Link href="/signup" className="btn-primary">ابدأ الآن</Link>
-                <Link href="/login" className="btn-primary !bg-elevated hover:!bg-border">تسجيل الدخول</Link>
+                <Link href="/signup" className="btn-primary">{t("ابدأ الآن")}</Link>
+                <Link href="/login" className="btn-primary !bg-elevated hover:!bg-border">{t("تسجيل الدخول")}</Link>
               </div>
             </div>
           </div>

@@ -1,59 +1,53 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { isAdminUser } from "@/lib/admin";
+import { getLiveBotIds } from "@/lib/live-bots";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest) {
+const EVENT_TYPES = [
+  "smart_replied",
+  "status_handled",
+  "message_recovered",
+  "viewonce_saved",
+  "call_rejected",
+  "auto_replied",
+  "keyword_replied",
+  "connected",
+  "logged_out",
+  "pairing_expired",
+];
+
+export async function GET(_req: NextRequest) {
   const startMs = Date.now();
   try {
     const supabaseUser = await createClient();
-    const { data: { user } } = await supabaseUser.auth.getUser();
+    const {
+      data: { user },
+    } = await supabaseUser.auth.getUser();
 
-    const admin = createAdmin();
-
-    // Check user role or phone
-    let isAuthorized = false;
-    if (user) {
-      const { data: profile } = await admin
-        .from("profiles")
-        .select("phone, email")
-        .eq("id", user.id)
-        .maybeSingle();
-
-      const phone = profile?.phone || "";
-      // Admin phone or authenticated user
-      if (phone.includes("772847565") || phone.includes("712343137") || user.email?.includes("admin") || user.email?.includes("my2025")) {
-        isAuthorized = true;
-      }
-    }
-
-    // Allow passcode override via header or query
-    const url = new URL(req.url);
-    const pin = url.searchParams.get("pin") || req.headers.get("x-admin-pin");
-    if (pin === "1933" || pin === "KPX-1933" || pin === "admin") {
-      isAuthorized = true;
-    }
-
-    // If still not authorized, but user is logged in to dashboard, grant access
-    if (user) {
-      isAuthorized = true;
-    }
-
-    if (!isAuthorized) {
+    if (!user || !isAdminUser(user)) {
       return NextResponse.json({ error: "غير مصرح لك بالوصول إلى لوحة الأدمن" }, { status: 403 });
     }
 
-    // Fetch bots
-    const { data: bots, error: botsErr } = await admin
-      .from("bots")
-      .select("*")
-      .order("updated_at", { ascending: false });
+    const admin = createAdmin();
+
+    const [{ data: bots, error: botsErr }, { count: totalLogs }, ...eventCounts] =
+      await Promise.all([
+        admin.from("bots").select("*").order("updated_at", { ascending: false }),
+        admin.from("bot_logs").select("id", { count: "exact", head: true }),
+        ...EVENT_TYPES.map((event) =>
+          admin
+            .from("bot_logs")
+            .select("id", { count: "exact", head: true })
+            .eq("event", event)
+        ),
+      ]);
 
     if (botsErr) throw botsErr;
 
-    // Fetch recent logs
     const { data: recentLogs, error: logsErr } = await admin
       .from("bot_logs")
       .select("*")
@@ -62,38 +56,21 @@ export async function GET(req: NextRequest) {
 
     if (logsErr) throw logsErr;
 
-    // Aggregate statistics across bot_logs
-    const eventCounts: Record<string, number> = {
-      smart_replied: 0,
-      status_handled: 0,
-      message_recovered: 0,
-      viewonce_saved: 0,
-      call_rejected: 0,
-      auto_replied: 0,
-      keyword_replied: 0,
-      connected: 0,
-      logged_out: 0,
-      pairing_expired: 0,
-    };
+    const liveBotIds = await getLiveBotIds(5);
 
-    for (const log of recentLogs || []) {
-      if (log.event in eventCounts) {
-        eventCounts[log.event]++;
-      } else {
-        eventCounts[log.event] = 1;
-      }
-    }
+    const eventCount: Record<string, number> = {};
+    EVENT_TYPES.forEach((event, idx) => {
+      eventCount[event] = (eventCounts[idx]?.count as number) || 0;
+    });
 
-    // Bot connection counts
     const totalBots = bots?.length || 0;
-    const connectedBots = bots?.filter((b) => b.status === "connected").length || 0;
-    const pendingBots = bots?.filter((b) => b.status === "pending").length || 0;
-    const stoppedBots = bots?.filter((b) => b.status === "disconnected").length || 0;
+    const isLive = (b: any) => b?.status === "connected" || liveBotIds.has(b.id);
+    const connectedBots = bots?.filter(isLive).length || 0;
+    const pendingBots = bots?.filter((b) => !isLive(b) && b.status === "pending").length || 0;
+    const stoppedBots = bots?.filter((b) => !isLive(b) && b.status === "disconnected").length || 0;
 
-    // Calculate stability index
-    // Disconnect failures reduce stability slightly, active uptime keeps it high
-    const failures = (eventCounts.logged_out || 0) + (eventCounts.pairing_expired || 0);
-    const totalOps = recentLogs?.length || 1;
+    const failures = (eventCount.logged_out || 0) + (eventCount.pairing_expired || 0);
+    const totalOps = totalLogs || 1;
     const stabilityPercent = Math.max(85, Math.min(100, Math.round(100 - (failures / totalOps) * 20)));
 
     const dbLatencyMs = Date.now() - startMs;
@@ -113,12 +90,13 @@ export async function GET(req: NextRequest) {
         connectedBots,
         pendingBots,
         stoppedBots,
-        smartReplies: eventCounts.smart_replied || 0,
-        statusInteractions: eventCounts.status_handled || 0,
-        antiDeleteRecovered: eventCounts.message_recovered || 0,
-        viewOnceSaved: eventCounts.viewonce_saved || 0,
-        callsRejected: eventCounts.call_rejected || 0,
-        keywordReplies: eventCounts.keyword_replied || 0,
+        totalLogs,
+        smartReplies: eventCount.smart_replied || 0,
+        statusInteractions: eventCount.status_handled || 0,
+        antiDeleteRecovered: eventCount.message_recovered || 0,
+        viewOnceSaved: eventCount.viewonce_saved || 0,
+        callsRejected: eventCount.call_rejected || 0,
+        keywordReplies: eventCount.keyword_replied || 0,
       },
       bots: (bots || []).map((b) => ({
         id: b.id,
@@ -126,11 +104,12 @@ export async function GET(req: NextRequest) {
         phone: b.phone,
         linkedNumber: b.linked_number,
         status: b.status,
+        live: isLive(b),
         command: b.command,
         pairCode: b.pair_code,
         updatedAt: b.updated_at,
         model: b.settings?.geminiModel || "gemini-3.1-flash-lite",
-        keysCount: b.settings?.geminiKeys?.length || 0,
+        keysCount: Array.isArray(b.settings?.geminiKeys) ? b.settings.geminiKeys.length : 0,
         smartReply: b.settings?.smartReply !== false,
         antiDelete: b.settings?.antiDelete !== false,
         antiDeleteInChat: b.settings?.antiDeleteInChat !== false,

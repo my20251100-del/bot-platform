@@ -3,6 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import LogoutButton from "@/components/logout-button";
+import LanguageToggle from "@/components/language-toggle";
+import { useI18n } from "@/components/i18n-provider";
 
 interface SiteHeaderClientProps {
   user: {
@@ -12,6 +14,7 @@ interface SiteHeaderClientProps {
 }
 
 export default function SiteHeaderClient({ user }: SiteHeaderClientProps) {
+  const { t } = useI18n();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [botDropdownOpen, setBotDropdownOpen] = useState(false);
 
@@ -35,10 +38,10 @@ export default function SiteHeaderClient({ user }: SiteHeaderClientProps) {
         {/* روابط الديسكتوب المركزية */}
         <div className="hidden md:flex items-center gap-1 rounded-2xl border border-border/60 bg-elevated/60 p-1">
           <Link href="/" className="rounded-xl px-3.5 py-1.5 text-sm font-medium text-muted transition hover:bg-surface hover:text-fg">
-            الرئيسية
+            {t("الرئيسية")}
           </Link>
 
-          {/* قائمة البوت المنسدلة مطابقة لـ Red Queen */}
+          {/* قائمة البوت المنسدلة */}
           <div
             className="relative"
             onMouseEnter={() => setBotDropdownOpen(true)}
@@ -55,7 +58,7 @@ export default function SiteHeaderClient({ user }: SiteHeaderClientProps) {
                 type="button"
                 onClick={() => setBotDropdownOpen(!botDropdownOpen)}
                 className="rounded-e-xl pe-2.5 ps-0.5 py-1.5 text-accent transition hover:bg-surface"
-                aria-label="قائمة البوت"
+                aria-label={t("قائمة البوت")}
               >
                 <svg
                   fill="none"
@@ -78,63 +81,65 @@ export default function SiteHeaderClient({ user }: SiteHeaderClientProps) {
                   className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-white hover:bg-elevated hover:text-accent"
                 >
                   <span>🤖</span>
-                  <span>The Mini Bot (الرئيسية)</span>
+                  <span>{t("The Mini Bot (الرئيسية)")}</span>
                 </Link>
                 <Link
                   href="/bot/create"
                   className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold text-accent hover:bg-accent/15"
                 >
                   <span>🚀</span>
-                  <span>Deploy Now (ربط الآن)</span>
+                  <span>{t("Deploy Now (ربط الآن)")}</span>
                 </Link>
                 <Link
                   href="/bot/setting"
                   className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-white hover:bg-elevated hover:text-accent"
                 >
                   <span>⚙️</span>
-                  <span>Settings (الإعدادات)</span>
+                  <span>{t("Settings (الإعدادات)")}</span>
                 </Link>
                 <Link
                   href="/bot/autoreply"
                   className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-white hover:bg-elevated hover:text-accent"
                 >
                   <span>💬</span>
-                  <span>Auto Reply (الرد الآلي)</span>
+                  <span>{t("Auto Reply (الرد الآلي)")}</span>
                 </Link>
                 <Link
                   href="/bot/contact"
                   className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-white hover:bg-elevated hover:text-accent"
                 >
                   <span>📇</span>
-                  <span>Auto Save (حفظ الأرقام)</span>
+                  <span>{t("Auto Save (حفظ الأرقام)")}</span>
                 </Link>
               </div>
             )}
           </div>
 
           <Link href="/connect" className="rounded-xl px-3.5 py-1.5 text-sm font-semibold text-accent transition hover:bg-accent/15">
-            ⚡ ربط سريع
+            {t("⚡ ربط سريع")}
           </Link>
           <Link href="/#features" className="rounded-xl px-3.5 py-1.5 text-sm font-medium text-muted transition hover:bg-surface hover:text-fg">
-            المميزات
+            {t("المميزات")}
           </Link>
           <Link href="/faq" className="rounded-xl px-3.5 py-1.5 text-sm font-medium text-muted transition hover:bg-surface hover:text-fg">
-            الأسئلة الشائعة
+            {t("الأسئلة الشائعة")}
           </Link>
           <Link href="/contact" className="rounded-xl px-3.5 py-1.5 text-sm font-medium text-muted transition hover:bg-surface hover:text-fg">
-            اتصل بنا
+            {t("اتصل بنا")}
           </Link>
         </div>
 
-        {/* أزرار العمليات (ظاهرة وواضحة على الجوال والكمبيوتر) */}
+        {/* أزرار العمليات */}
         <div className="flex items-center gap-2">
+          <LanguageToggle compact />
+
           {user ? (
             <>
               <Link
                 href="/dashboard"
                 className="inline-flex items-center gap-1.5 rounded-xl bg-accent px-3.5 py-1.5 text-xs sm:text-sm font-bold text-accent-fg shadow-md shadow-accent/30 transition hover:brightness-110"
               >
-                <span>لوحة التحكم</span>
+                <span>{t("لوحة التحكم")}</span>
                 <span className="hidden sm:inline">🚀</span>
               </Link>
               <div className="hidden sm:block">
@@ -143,32 +148,31 @@ export default function SiteHeaderClient({ user }: SiteHeaderClientProps) {
             </>
           ) : (
             <>
-              {/* زر تسجيل الدخول واضح وموجود على جميع الشاشات */}
               <Link
                 href="/login"
                 className="inline-flex items-center gap-1.5 rounded-xl border border-border/80 bg-surface/90 px-3 py-1.5 text-xs sm:text-sm font-semibold text-fg transition hover:border-accent hover:text-accent"
               >
                 <span>🔑</span>
-                <span>تسجيل الدخول</span>
+                <span className="hidden sm:inline">{t("🔑 تسجيل الدخول")}</span>
+                <span className="sm:hidden">{t("دخول")}</span>
               </Link>
 
-              {/* زر ابدأ مجاناً */}
               <Link
                 href="/signup"
                 className="inline-flex items-center gap-1 rounded-xl bg-accent px-3 py-1.5 text-xs sm:text-sm font-bold text-accent-fg shadow-sm shadow-accent/25 transition hover:brightness-110"
               >
-                <span>ابدأ مجاناً</span>
+                <span>{t("ابدأ مجاناً")}</span>
                 <span className="hidden sm:inline">✨</span>
               </Link>
             </>
           )}
 
-          {/* زر قائمة الجوال (همبرغر) */}
+          {/* زر قائمة الجوال */}
           <button
             type="button"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             className="grid h-9 w-9 place-items-center rounded-xl border border-border/60 bg-elevated/70 text-fg md:hidden transition hover:bg-surface"
-            aria-label="القائمة"
+            aria-label={t("القائمة")}
           >
             {mobileMenuOpen ? (
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -193,7 +197,7 @@ export default function SiteHeaderClient({ user }: SiteHeaderClientProps) {
               className="flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium text-fg hover:bg-surface"
             >
               <span>🏠</span>
-              <span>الرئيسية</span>
+              <span>{t("الرئيسية")}</span>
             </Link>
 
             <Link
@@ -202,7 +206,7 @@ export default function SiteHeaderClient({ user }: SiteHeaderClientProps) {
               className="flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-bold text-accent bg-accent/10 hover:bg-accent/20"
             >
               <span>🤖</span>
-              <span>The Mini Bot (منصة البوت)</span>
+              <span>{t("The Mini Bot (منصة البوت)")}</span>
             </Link>
 
             <Link
@@ -211,7 +215,7 @@ export default function SiteHeaderClient({ user }: SiteHeaderClientProps) {
               className="flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-fg hover:bg-surface"
             >
               <span>🚀</span>
-              <span>Deploy Now (ربط رقم جديد)</span>
+              <span>{t("Deploy Now (ربط رقم جديد)")}</span>
             </Link>
 
             <Link
@@ -220,7 +224,7 @@ export default function SiteHeaderClient({ user }: SiteHeaderClientProps) {
               className="flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-fg hover:bg-surface"
             >
               <span>⚙️</span>
-              <span>Bot Settings (الإعدادات)</span>
+              <span>{t("Bot Settings (الإعدادات)")}</span>
             </Link>
 
             <Link
@@ -229,7 +233,7 @@ export default function SiteHeaderClient({ user }: SiteHeaderClientProps) {
               className="flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-fg hover:bg-surface"
             >
               <span>💬</span>
-              <span>Auto Reply (الرد التلقائي)</span>
+              <span>{t("Auto Reply (الرد التلقائي)")}</span>
             </Link>
 
             <Link
@@ -238,7 +242,7 @@ export default function SiteHeaderClient({ user }: SiteHeaderClientProps) {
               className="flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-fg hover:bg-surface"
             >
               <span>📇</span>
-              <span>Auto Save (حفظ الأرقام)</span>
+              <span>{t("Auto Save (حفظ الأرقام)")}</span>
             </Link>
 
             <Link
@@ -247,7 +251,7 @@ export default function SiteHeaderClient({ user }: SiteHeaderClientProps) {
               className="flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium text-muted hover:bg-surface hover:text-fg"
             >
               <span>✨</span>
-              <span>المميزات والخصائص</span>
+              <span>{t("المميزات والخصائص")}</span>
             </Link>
 
             <Link
@@ -256,7 +260,7 @@ export default function SiteHeaderClient({ user }: SiteHeaderClientProps) {
               className="flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium text-muted hover:bg-surface hover:text-fg"
             >
               <span>❓</span>
-              <span>الأسئلة الشائعة</span>
+              <span>{t("الأسئلة الشائعة")}</span>
             </Link>
 
             <Link
@@ -265,7 +269,7 @@ export default function SiteHeaderClient({ user }: SiteHeaderClientProps) {
               className="flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium text-muted hover:bg-surface hover:text-fg"
             >
               <span>📞</span>
-              <span>اتصل بنا والدعم</span>
+              <span>{t("اتصل بنا والدعم")}</span>
             </Link>
 
             <div className="my-2 border-t border-border/50" />
@@ -277,7 +281,7 @@ export default function SiteHeaderClient({ user }: SiteHeaderClientProps) {
                   onClick={() => setMobileMenuOpen(false)}
                   className="flex-1 text-center rounded-xl bg-accent py-2.5 text-sm font-bold text-accent-fg shadow-md shadow-accent/25"
                 >
-                  دخول لوحة التحكم 🚀
+                  {t("دخول لوحة التحكم 🚀")}
                 </Link>
                 <LogoutButton />
               </div>
@@ -289,14 +293,14 @@ export default function SiteHeaderClient({ user }: SiteHeaderClientProps) {
                   className="flex items-center justify-center gap-1.5 rounded-xl border border-accent/60 bg-surface py-2.5 text-sm font-bold text-accent shadow-sm"
                 >
                   <span>🔑</span>
-                  <span>تسجيل الدخول</span>
+                  <span>{t("دخول")}</span>
                 </Link>
                 <Link
                   href="/signup"
                   onClick={() => setMobileMenuOpen(false)}
                   className="flex items-center justify-center gap-1.5 rounded-xl bg-accent py-2.5 text-sm font-bold text-accent-fg shadow-md shadow-accent/25"
                 >
-                  <span>ابدأ مجاناً ✨</span>
+                  <span>{t("ابدأ مجاناً ✨")}</span>
                 </Link>
               </div>
             )}

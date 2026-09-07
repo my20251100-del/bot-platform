@@ -2,8 +2,12 @@ import { Suspense } from "react";
 import SiteHeader from "@/components/site-header";
 import SiteFooter from "@/components/site-footer";
 import SignupClient from "./signup-client";
+import { getServerLocale } from "@/lib/server-locale";
+import { tr } from "@/lib/i18n";
 
-export default function SignupPage() {
+export default async function SignupPage() {
+  const locale = await getServerLocale();
+  const t = (s: string) => tr(locale, s);
   return (
     <div className="flex min-h-dvh flex-col">
       <SiteHeader />
@@ -11,7 +15,7 @@ export default function SignupPage() {
         <div className="grid min-h-[calc(100dvh-4rem)] md:grid-cols-2 overflow-x-hidden">
           <div className="relative flex flex-col justify-center px-4 py-12 md:px-10 md:py-24 w-full">
             <div className="mx-auto w-full max-w-md md:max-w-lg">
-              <Suspense fallback={<div className="card p-10 text-center text-muted">جارٍ التحميل...</div>}>
+              <Suspense fallback={<div className="card p-10 text-center text-muted">{t("جارٍ التحميل...")}</div>}>
                 <SignupClient />
               </Suspense>
             </div>
@@ -26,7 +30,7 @@ export default function SignupPage() {
             </div>
             <div className="mt-8 text-center">
               <h2 className="text-2xl font-bold font-mono">Hatem <span className="text-accent">X</span></h2>
-              <p className="mt-2 max-w-xs text-sm text-muted">أتمتة وحماية واتساب الذكية عبر منصة Hatem X — تفاعلات، مضاد حذف، ومساعد ذكاء اصطناعي في مكان واحد.</p>
+              <p className="mt-2 max-w-xs text-sm text-muted">{t("أتمتة وحماية واتساب الذكية عبر منصة Hatem X — تفاعلات، مضاد حذف، ومساعد ذكاء اصطناعي في مكان واحد.")}</p>
             </div>
           </div>
         </div>

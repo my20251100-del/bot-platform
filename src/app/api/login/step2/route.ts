@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { normalizePhoneNumber } from "@/lib/phone";
+import { rateLimit, clientIp } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -11,6 +12,13 @@ export async function POST(req: NextRequest) {
     const { email, password, code } = await req.json();
     if (!email || !password || !code)
       return NextResponse.json({ error: "بيانات ناقصة" }, { status: 400 });
+
+    const ip = clientIp(req);
+    const perEmail = rateLimit({ key: `loginverify:${String(email).toLowerCase()}`, limit: 10, windowMs: 15 * 60 * 1000 });
+    const perIp = rateLimit({ key: `loginverify:ip:${ip}`, limit: 40, windowMs: 15 * 60 * 1000 });
+    if (!perEmail.ok || !perIp.ok) {
+      return NextResponse.json({ error: "محاولات كثيرة، حاول بعد قليل" }, { status: 429 });
+    }
 
     const admin = createAdmin();
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -49,7 +57,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, code: "LOGIN_FAILED", message: "حدث خطأ أثناء الدخول" }, { status: 401 });
 
     return NextResponse.json({ success: true, message: "تم تسجيل الدخول بنجاح" });
-  } catch (e: any) {
-    return NextResponse.json({ success: false, code: "VERIFY_FAILED", message: e.message || "حدث خطأ أثناء التحقق" }, { status: 500 });
+  } catch {
+    return NextResponse.json({ success: false, code: "VERIFY_FAILED", message: "حدث خطأ أثناء التحقق" }, { status: 500 });
   }
 }

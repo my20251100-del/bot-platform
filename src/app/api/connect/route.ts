@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdmin } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
+import { isAdminUser } from "@/lib/admin";
 import { normalizePhoneNumber, isValidWhatsAppPhone } from "@/lib/phone";
+import { rateLimit, clientIp } from "@/lib/rate-limit";
+import { signConnectToken, verifyConnectToken } from "@/lib/connect-token";
 
 export const runtime = "nodejs";
 
@@ -21,21 +25,45 @@ function toBotPayload(b: any, digits: string) {
   };
 }
 
+// هل يملك المتصل صلاحية التحكم بهذا البوت؟
+// إما توكن موقع صادر من آخر طلب ناجح، أو جلسة تسجيل دخول (المالك أو أدمن المنصة).
+async function canControlBot(token: string | null | undefined, digits: string, bot: any) {
+  if (bot && verifyConnectToken(token, bot.id, bot.phone || bot.linked_number || digits)) return true;
+
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (user && bot && (bot.user_id === user.id || isAdminUser(user))) return true;
+  } catch {
+    return false;
+  }
+  return false;
+}
+
 // استلام حالة الربط الحالية (QR / الكود / متصل). الاتصال الفعلي يقوم به المحرك.
 export async function GET(req: NextRequest) {
   try {
     const number = (req.nextUrl.searchParams.get("number") || "").replace(/\D/g, "");
     if (!number) return NextResponse.json({ error: "رقم غير صالح" }, { status: 400 });
 
+    const token = req.nextUrl.searchParams.get("token");
     const admin = createAdmin();
     const { data: bots, error } = await admin
       .from("bots")
-      .select("id, name, status, command, link_method, pair_code, qr, linked_number, settings, phone, metadata")
+      .select("id, user_id, name, status, command, link_method, pair_code, qr, linked_number, settings, phone, metadata")
       .or(`phone.eq.${number},linked_number.eq.${number}`);
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     const bot = bots?.[0];
     if (!bot) return NextResponse.json({ error: "not_found" }, { status: 404 });
+
+    // كود الاقتران سري — لا يُسلَّم إلا لمن يملك توكن صحيحاً أو جلسة مالك/أدمن.
+    const authorized = await canControlBot(token, number, bot);
+    if (!authorized) {
+      return NextResponse.json({ error: "غير مصرح — هذا الطلب يحتاج توكن الربط الصادر عند إنشاء البوت" }, { status: 401 });
+    }
 
     return NextResponse.json({ ok: true, bot: toBotPayload(bot, number) });
   } catch (e: any) {
@@ -97,10 +125,20 @@ async function ensureSystemUser(admin: any, digits: string) {
 // — يمنع إنشاء أكثر من بوت لنفس الرقم، ويترك الكود الحقيقي يولّده المحرك (Baileys).
 export async function POST(req: NextRequest) {
   try {
+    const ip = clientIp(req);
+    const perIp = rateLimit({ key: `connect:ip:${ip}`, limit: 8, windowMs: 10 * 60 * 1000 });
+    if (!perIp.ok) {
+      return NextResponse.json(
+        { error: "طلبات كثيرة من هذا الجهاز، حاول بعد قليل", retryAfterSec: perIp.retryAfterSec },
+        { status: 429 }
+      );
+    }
+
     const body = await req.json();
     const rawNumber = body.number || body.phone;
     const action = body.action || "start";
     const botName = body.name || body.botName;
+    const token = typeof body.token === "string" ? body.token : null;
 
     if (!rawNumber) return NextResponse.json({ error: "أدخل رقم الواتساب" }, { status: 400 });
 
@@ -112,14 +150,14 @@ export async function POST(req: NextRequest) {
 
     const { data: bots, error } = await admin
       .from("bots")
-      .select("id, name, status, command, link_method, pair_code, qr, linked_number, settings, phone, metadata")
+      .select("id, user_id, name, status, command, link_method, pair_code, qr, linked_number, settings, phone, metadata")
       .or(`phone.eq.${digits},linked_number.eq.${digits}`);
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
     let bot = bots?.[0];
 
-    // لم يجد بوتاً لهذا الرقم — أنشئ حساباً وبوتاً واحداً فقط
+    // لم يجد بوتاً لهذا الرقم — أنشئ حساباً وبوتاً واحداً فقط (إجراء عام بلا مصادقة + حدّ معدل)
     if (!bot) {
       const { user_id } = await ensureSystemUser(admin, digits);
       const name = (botName && String(botName).trim()) || "بوتي";
@@ -136,13 +174,22 @@ export async function POST(req: NextRequest) {
           command: "start",
           metadata: { request_restart: Date.now() },
         })
-        .select("id, name, status, command, link_method, pair_code, qr, linked_number, settings, phone, metadata")
+        .select("id, user_id, name, status, command, link_method, pair_code, qr, linked_number, settings, phone, metadata")
         .single();
       if (insErr || !created) {
         return NextResponse.json({ error: insErr?.message || "تعذّر إنشاء البوت" }, { status: 500 });
       }
       bot = created;
     } else if (action === "start" || action === "reset") {
+      // البوت موجود مسبقاً — لا يسمح لأي أحدٍ بالتحكم به إلا صاحبه/المصرّح له.
+      const authorized = await canControlBot(token, digits, bot);
+      if (!authorized) {
+        return NextResponse.json(
+          { error: "غير مصرح — هذا البوت مسجّل لمالك آخر. سجّل الدخول كمالك البوت أو استخدم توكن الربط الصادر لك." },
+          { status: 403 }
+        );
+      }
+
       // إعادة بدء الربط: نحذف المفاتيح فقط إذا طلب المستخدم إعادة التعيين الصريحة (reset) وكان البوت غير متصل
       if (action === "reset" && bot.status !== "connected") {
         const admin2 = createAdmin();
@@ -185,7 +232,7 @@ export async function POST(req: NextRequest) {
         await new Promise((r) => setTimeout(r, 500));
         const { data: refreshed } = await admin
           .from("bots")
-          .select("id, name, status, command, link_method, pair_code, qr, linked_number, settings, phone, metadata")
+          .select("id, user_id, name, status, command, link_method, pair_code, qr, linked_number, settings, phone, metadata")
           .eq("id", bot.id)
           .maybeSingle();
         if (refreshed?.pair_code || refreshed?.status === "connected") {
@@ -199,6 +246,7 @@ export async function POST(req: NextRequest) {
       ok: true,
       bot: toBotPayload(bot, digits),
       pairCode: bot.pair_code || null,
+      connectToken: signConnectToken(bot.id, digits),
     });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });

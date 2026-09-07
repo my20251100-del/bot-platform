@@ -134,11 +134,16 @@ async function processBotCommands() {
 }
 
 export async function GET(req: NextRequest) {
-  const authHeader = req.headers.get("authorization");
-  const cronSecret = process.env.CRON_SECRET;
   const isVercelCron = req.headers.get("x-vercel-cron") === "1";
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}` && !isVercelCron) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!isVercelCron) {
+    const authHeader = req.headers.get("authorization");
+    const cronSecret = process.env.CRON_SECRET;
+    if (!cronSecret) {
+      return NextResponse.json({ error: "Cron secret not configured" }, { status: 503 });
+    }
+    if (authHeader !== `Bearer ${cronSecret}`) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
   }
 
   const start = Date.now();

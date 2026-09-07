@@ -5,6 +5,7 @@ import { normalizePhoneNumber } from "@/lib/phone";
 import { logOtpEvent, logOtpError } from "@/lib/otp-logger";
 import { sendTelegramOtp } from "@/lib/telegram";
 import { sendUniversalOtp } from "@/lib/mailer";
+import { rateLimit, clientIp } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -17,6 +18,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, code: "INVALID_INPUT", message: "أدخل البريد وكلمة المرور" }, { status: 400 });
 
     let targetEmail = String(email || "").trim();
+    const ip = clientIp(req);
+
+    const perEmailIp = rateLimit({ key: `login:${targetEmail.toLowerCase()}:${ip}`, limit: 8, windowMs: 15 * 60 * 1000 });
+    const perIp = rateLimit({ key: `login:ip:${ip}`, limit: 30, windowMs: 15 * 60 * 1000 });
+    if (!perEmailIp.ok || !perIp.ok) {
+      return NextResponse.json(
+        { success: false, code: "RATE_LIMITED", message: "محاولات كثيرة، حاول بعد قليل", retryAfterSec: Math.max(perEmailIp.retryAfterSec, perIp.retryAfterSec) },
+        { status: 429 }
+      );
+    }
+
     const admin = createAdmin();
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
     const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -42,7 +54,7 @@ export async function POST(req: NextRequest) {
         {
           success: false,
           code: "INVALID_CREDENTIALS",
-          message: error.message.includes("confirmation") ? error.message : "البريد أو كلمة المرور غير صحيحة",
+          message: "البريد أو كلمة المرور غير صحيحة",
         },
         { status: 401 }
       );
@@ -55,12 +67,15 @@ export async function POST(req: NextRequest) {
     const list = await r.json();
     const usr = Array.isArray(list?.users) ? list.users.find((u: any) => u.email === targetEmail) : null;
     const phone = normalizePhoneNumber(usr?.user_metadata?.phone || "");
-    if (!usr?.id || !phone)
-      return NextResponse.json({ success: false, code: "NO_WHATSAPP_PHONE", message: "رقم واتساب غير مسجّل لهذا الحساب" }, { status: 400 });
+    if (!usr?.id || !phone) {
+      return NextResponse.json(
+        { success: false, code: "INVALID_CREDENTIALS", message: "البريد أو كلمة المرور غير صحيحة" },
+        { status: 401 }
+      );
+    }
 
     const code = genOtp();
     const expires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-    console.log(`[AUTH-LOGIN-OTP] Generated code for ${targetEmail}: ${code} (expires in 15m)`);
     logOtpEvent("login_otp_generated", { expiry: expires, purpose: "login", phoneLength: phone.length });
     const meta = usr.user_metadata || {};
 
@@ -78,8 +93,8 @@ export async function POST(req: NextRequest) {
     if (!upd.ok) throw new Error("فشل حفظ رمز التحقق");
 
     await Promise.allSettled([
-      sendTelegramOtp({ code, purpose: "login", email, phone }),
-      sendUniversalOtp({ to: email, code, purpose: "login" })
+      sendTelegramOtp({ code, purpose: "login", email: targetEmail, phone }),
+      sendUniversalOtp({ to: targetEmail, code, purpose: "login" })
     ]);
 
     try {
@@ -88,11 +103,11 @@ export async function POST(req: NextRequest) {
       logOtpEvent("login_queue_success", { userId: usr.id.slice(0, 8), phoneLength: phone.length });
     } catch (e: any) {
       const devOtp = process.env.NODE_ENV === "development" ? code : undefined;
-      return NextResponse.json({ success: true, requiresVerification: true, dev_otp: devOtp, message: "تم إرسال رمز التحقق إلى حسابك", email });
+      return NextResponse.json({ success: true, requiresVerification: true, dev_otp: devOtp, message: "تم إرسال رمز التحقق إلى حسابك", email: targetEmail });
     }
 
     const devOtp = process.env.NODE_ENV === "development" ? code : undefined;
-    return NextResponse.json({ success: true, requiresVerification: true, dev_otp: devOtp, message: "تم إرسال رمز التحقق إلى حسابك", email });
+    return NextResponse.json({ success: true, requiresVerification: true, dev_otp: devOtp, message: "تم إرسال رمز التحقق إلى حسابك", email: targetEmail });
   } catch (e: any) {
     logOtpError("login_fatal", { error: e.message });
     return NextResponse.json({ success: false, code: "LOGIN_FAILED", message: e.message || "حدث خطأ غير متوقع" }, { status: 500 });

@@ -31,8 +31,8 @@ export default async function proxy(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
 
-  // redirect logged-out users away from dashboard (analytics is secured by admin PIN)
-  if (!user && pathname.startsWith("/dashboard") && pathname !== "/dashboard/analytics") {
+  // redirect logged-out users away from dashboard
+  if (!user && pathname.startsWith("/dashboard")) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);

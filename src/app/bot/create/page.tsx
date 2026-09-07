@@ -25,6 +25,7 @@ export default function DeployBotPage() {
   const [connectedBotId, setConnectedBotId] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [botSecret, setBotSecret] = useState<string | null>(null);
+  const tokenRef = useRef<string | null>(null);
 
   // مؤقت التنازلي للكود
   useEffect(() => {
@@ -51,7 +52,8 @@ export default function DeployBotPage() {
     let active = true;
     const checkInterval = setInterval(async () => {
       try {
-        const res = await fetch(`/api/connect?number=${encodeURIComponent(cleanPhone)}`);
+        const token = tokenRef.current ? `&token=${encodeURIComponent(tokenRef.current)}` : "";
+        const res = await fetch(`/api/connect?number=${encodeURIComponent(cleanPhone)}${token}`);
         const data = await res.json();
         if (!active || !data?.bot) return;
 
@@ -105,6 +107,7 @@ export default function DeployBotPage() {
           action: "start",
           linkMethod: "pair_code",
           name: `بوت ${cleanPhone.slice(-4)}`,
+          token: tokenRef.current,
         }),
       });
 
@@ -113,6 +116,7 @@ export default function DeployBotPage() {
         throw new Error(data.error || "فشل بدء عملية الاقتران");
       }
 
+      if (data.connectToken) tokenRef.current = data.connectToken;
       setConnectedBotId(data.id || data.bot?.id);
 
       // إذا وُجد الكود فوراً
@@ -144,9 +148,11 @@ export default function DeployBotPage() {
           action: "start",
           linkMethod: "qr",
           name: "بوت باركود",
+          token: tokenRef.current,
         }),
       });
       const data = await res.json();
+      if (data.connectToken) tokenRef.current = data.connectToken;
       if (data.bot?.qr) {
         setQrCode(data.bot.qr);
       }

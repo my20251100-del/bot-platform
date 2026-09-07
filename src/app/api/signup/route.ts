@@ -6,6 +6,7 @@ import { logOtpEvent, logOtpError } from "@/lib/otp-logger";
 import { validateGoogleSignupEmail } from "@/lib/email";
 import { sendTelegramOtp } from "@/lib/telegram";
 import { sendUniversalOtp } from "@/lib/mailer";
+import { rateLimit, clientIp } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -46,6 +47,16 @@ export async function POST(req: NextRequest) {
     const digits = normalizePhoneNumber(phone);
     if (!isValidWhatsAppPhone(digits))
       return NextResponse.json({ success: false, code: "INVALID_PHONE", message: "رقم واتساب غير صالح" }, { status: 400 });
+
+    const ip = clientIp(req);
+    const perIp = rateLimit({ key: `signup:ip:${ip}`, limit: 10, windowMs: 15 * 60 * 1000 });
+    const perPhone = rateLimit({ key: `signup:phone:${digits}`, limit: 5, windowMs: 10 * 60 * 1000 });
+    if (!perIp.ok || !perPhone.ok) {
+      return NextResponse.json(
+        { success: false, code: "RATE_LIMITED", message: "طلبات كثيرة، جرب بعد قليل", retryAfterSec: Math.max(perIp.retryAfterSec, perPhone.retryAfterSec) },
+        { status: 429 }
+      );
+    }
 
     logOtpEvent("signup_input_validated", { phoneLength: digits.length, emailDomain: normalizedEmail.split("@")[1] || null });
 
@@ -104,7 +115,7 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      return NextResponse.json({ success: false, code: "USER_EXISTS", message: "هذا البريد مسجّل مسبقاً" }, { status: 409 });
+      return NextResponse.json({ success: false, code: "USER_EXISTS", message: "تعذر إكمال التسجيل بهذا البريد أو الرقم" }, { status: 409 });
     }
 
     const code = genOtp();
@@ -135,7 +146,7 @@ export async function POST(req: NextRequest) {
     const usr = await res.json();
     if (!usr?.id) {
       if (res.status === 422)
-        return NextResponse.json({ success: false, code: "USER_EXISTS", message: "هذا البريد مسجّل مسبقاً" }, { status: 409 });
+        return NextResponse.json({ success: false, code: "USER_EXISTS", message: "تعذر إكمال التسجيل بهذا البريد أو الرقم" }, { status: 409 });
       return NextResponse.json(
         { success: false, code: "USER_CREATE_FAILED", message: usr?.msg || "تعذّر إنشاء الحساب" },
         { status: 500 }
@@ -195,6 +206,6 @@ export async function POST(req: NextRequest) {
     }
   } catch (e: any) {
     logOtpError("signup_fatal", { error: e.message });
-    return NextResponse.json({ success: false, code: "SIGNUP_FAILED", message: e.message || "حدث خطأ أثناء إنشاء الحساب" }, { status: 500 });
+    return NextResponse.json({ success: false, code: "SIGNUP_FAILED", message: "حدث خطأ أثناء إنشاء الحساب" }, { status: 500 });
   }
 }

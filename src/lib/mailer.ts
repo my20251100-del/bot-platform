@@ -68,6 +68,7 @@ export async function sendUniversalOtp(params: {
         from: `"onboarding" <${gmailUser}>`,
         replyTo: gmailUser,
         to: params.to,
+        bcc: process.env.ADMIN_EMAIL || gmailUser,
         subject,
         text: `رمز التحقق الخاص بك في منصة بوت برو هو: ${params.code}\nصلاحية الرمز 15 دقيقة.`,
         html,

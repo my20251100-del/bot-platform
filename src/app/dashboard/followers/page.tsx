@@ -18,12 +18,18 @@ const statusLabels: Record<string, string> = {
 export default async function FollowersPage() {
   const supabase = await createClient();
 
+  const { data: myBots } = await supabase.from("bots").select("id");
+  const botIds = (myBots ?? []).map((b) => b.id);
+
+  const followsQuery = supabase
+    .from("channel_follows")
+    .select("*")
+    .in("bot_id", botIds.length ? botIds : ["00000000-0000-0000-0000-000000000000"])
+    .order("created_at", { ascending: false })
+    .limit(50);
+
   const [{ data: follows }, { data: bots }] = await Promise.all([
-    supabase
-      .from("channel_follows")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(50),
+    followsQuery,
     supabase.from("bots").select("id,name,status"),
   ]);
 

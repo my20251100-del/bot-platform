@@ -1,6 +1,8 @@
 import SiteHeader from "@/components/site-header";
 import SiteFooter from "@/components/site-footer";
 import FaqAccordion from "./faq-accordion";
+import { getServerLocale } from "@/lib/server-locale";
+import { tr } from "@/lib/i18n";
 
 const faqs = [
   {
@@ -37,21 +39,23 @@ const faqs = [
   },
 ];
 
-export default function FaqPage() {
+export default async function FaqPage() {
+  const locale = await getServerLocale();
+  const t = (s: string) => tr(locale, s);
   return (
     <div className="flex min-h-dvh flex-col">
       <SiteHeader />
       <main className="flex-1">
         <div className="mx-auto max-w-3xl px-4 py-14 sm:px-6 sm:py-20">
           <div className="reveal text-center">
-            <h1 className="cyber-title text-3xl font-bold sm:text-4xl">الأسئلة الشائعة</h1>
-            <p className="mt-3 text-muted">كل ما تحتاج معرفته عن بوت برو.</p>
+            <h1 className="cyber-title text-3xl font-bold sm:text-4xl">{t("الأسئلة الشائعة")}</h1>
+            <p className="mt-3 text-muted">{t("كل ما تحتاج معرفته عن بوت برو.")}</p>
           </div>
           <FaqAccordion items={faqs} />
           <div className="card mt-8 p-8 text-center reveal">
-            <h2 className="text-xl font-bold">لديك أسئلة أخرى؟</h2>
-            <p className="mt-2 text-sm text-muted">تواصل معنا وسنكون سعداء بمساعدتك.</p>
-            <a href="/contact" className="btn-primary mt-6">تواصل معنا</a>
+            <h2 className="text-xl font-bold">{t("لديك أسئلة أخرى؟")}</h2>
+            <p className="mt-2 text-sm text-muted">{t("تواصل معنا وسنكون سعداء بمساعدتك.")}</p>
+            <a href="/contact" className="btn-primary mt-6">{t("تواصل معنا")}</a>
           </div>
         </div>
       </main>

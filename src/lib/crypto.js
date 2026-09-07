@@ -5,7 +5,10 @@ const IV_LENGTH = 12;
 const AUTH_TAG_LENGTH = 16;
 
 function getEncryptionKey() {
-  const secret = process.env.ENCRYPTION_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || "bot-platform-secure-aes256-master-key-32b";
+  const secret = process.env.ENCRYPTION_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!secret) {
+    throw new Error("ENCRYPTION_KEY أو SUPABASE_SERVICE_ROLE_KEY غير مُعرّف — لا يمكن بدء التشفير بأمان");
+  }
   return crypto.createHash("sha256").update(secret).digest();
 }
 

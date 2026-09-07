@@ -5,6 +5,12 @@
       "maxDuration": 60
     }
   },
+  "crons": [
+    {
+      "path": "/api/bot/cron",
+      "schedule": "0 0 * * *"
+    }
+  ],
   "headers": [
     {
       "source": "/api/(.*)",

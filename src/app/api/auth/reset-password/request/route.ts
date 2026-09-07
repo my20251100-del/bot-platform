@@ -5,6 +5,7 @@ import { normalizePhoneNumber } from "@/lib/phone";
 import { logOtpEvent, logOtpError } from "@/lib/otp-logger";
 import { sendTelegramOtp } from "@/lib/telegram";
 import { sendUniversalOtp } from "@/lib/mailer";
+import { rateLimit, clientIp } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -12,7 +13,6 @@ function buildResetOtpMessage(code: string) {
   return `🔐 *بوت برو — استعادة كلمة المرور*\n\nرمز التحقق لتعيين كلمة مرور جديدة هو:\n\n*${code}*\n\nصالح لمدة 15 دقيقة.\nلا تشارك هذا الرمز مع أي شخص.\n\n— بوت برو`;
 }
 
-// طلب استعادة كلمة المرور عبر إرسال رمز OTP
 export async function POST(req: NextRequest) {
   try {
     const { email } = await req.json();
@@ -25,11 +25,20 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const ip = clientIp(req);
+    const perEmail = rateLimit({ key: `reset:${cleanEmail}`, limit: 5, windowMs: 15 * 60 * 1000 });
+    const perIp = rateLimit({ key: `reset:ip:${ip}`, limit: 20, windowMs: 15 * 60 * 1000 });
+    if (!perEmail.ok || !perIp.ok) {
+      return NextResponse.json(
+        { success: false, code: "RATE_LIMITED", message: "طلبات كثيرة، حاول بعد قليل", retryAfterSec: Math.max(perEmail.retryAfterSec, perIp.retryAfterSec) },
+        { status: 429 }
+      );
+    }
+
     const admin = createAdmin();
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
     const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
-    // البحث عن المستخدم
     const r = await fetch(
       `${url}/auth/v1/admin/users?email=${encodeURIComponent(cleanEmail)}`,
       { headers: { apikey: key, Authorization: `Bearer ${key}` } }
@@ -38,10 +47,12 @@ export async function POST(req: NextRequest) {
     const usr = Array.isArray(list?.users) ? list.users.find((u: any) => u.email?.toLowerCase() === cleanEmail) : null;
 
     if (!usr?.id) {
-      return NextResponse.json(
-        { success: false, code: "USER_NOT_FOUND", message: "هذا البريد الإلكتروني غير مسجل في المنصة" },
-        { status: 404 }
-      );
+      return NextResponse.json({
+        success: true,
+        requiresVerification: true,
+        message: "إذا كان البريد مسجلاً فسيصلك رمز التحقق",
+        email: cleanEmail,
+      });
     }
 
     const phone = normalizePhoneNumber(usr?.user_metadata?.phone || "");
@@ -49,7 +60,6 @@ export async function POST(req: NextRequest) {
     const expires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
     const meta = usr.user_metadata || {};
 
-    // حفظ رمز OTP في بيانات المستخدم
     const upd = await fetch(`${url}/auth/v1/admin/users/${usr.id}`, {
       method: "PUT",
       headers: {
@@ -66,7 +76,6 @@ export async function POST(req: NextRequest) {
       throw new Error("تعذر إنشاء رمز التحقق");
     }
 
-    // إرسال الرمز عبر القنوات المتاحة (Resend فوراً)
     await Promise.allSettled([
       sendTelegramOtp({ code, purpose: "reset", email: cleanEmail, phone }),
       sendUniversalOtp({ to: cleanEmail, code, purpose: "reset" })
@@ -80,17 +89,19 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    const devOtp = process.env.NODE_ENV === "development" ? code : undefined;
+
     return NextResponse.json({
       success: true,
       requiresVerification: true,
-      dev_otp: code,
+      dev_otp: devOtp,
       message: "تم إرسال رمز التحقق إلى بريدك وواتسابك بنجاح",
       email: cleanEmail,
     });
   } catch (e: any) {
     logOtpError("reset_fatal", { error: e.message });
     return NextResponse.json(
-      { success: false, code: "RESET_FAILED", message: e.message || "حدث خطأ أثناء معالجة الطلب" },
+      { success: false, code: "RESET_FAILED", message: "حدث خطأ أثناء معالجة الطلب" },
       { status: 500 }
     );
   }

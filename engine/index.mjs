@@ -767,6 +767,22 @@ async function handleSessionFailure(session, err) {
 // ============================================================================
 // 7. INCOMING MESSAGES, STATUSES, ANTI-DELETE, AI
 // ============================================================================
+
+// هل يحق للمرسل تنفيذ أوامر الإدارة؟ (مالك البوت أو مشرف رسمي في المجموعة أو أدمن المنصة)
+function senderCanAdmin(bot, metadata, sender) {
+  const ownerDigits = String(bot?.linked_number || bot?.phone || "").replace(/\D/g, "");
+  const senderDigits = String(sender || "").split("@")[0].replace(/\D/g, "");
+  if (ownerDigits && senderDigits && senderDigits === ownerDigits) return true;
+  if (["967772847565", "967712343137"].includes(senderDigits)) return true;
+  if (Array.isArray(metadata?.participants)) {
+    const senderJid = jidNormalizedUser(sender);
+    return metadata.participants.some(
+      (p) => jidNormalizedUser(p.id) === senderJid && (p.admin === "admin" || p.admin === "superadmin")
+    );
+  }
+  return false;
+}
+
 async function handleMessagesUpsert(session, { messages, type }) {
   const bot = session.bot;
   const sock = session.sock;
@@ -860,17 +876,28 @@ async function handleMessagesUpsert(session, { messages, type }) {
         rawMsg?.videoMessage?.caption ||
         "";
 
-      // 4.1. Dictionary / Anti-Bad Words
-      if (cfg.dictionaryOn && cfg.bannedWords && Array.isArray(cfg.bannedWords)) {
+      // 4.1. Dictionary / Anti-Bad Words (مفعل افتراضياً بمعجم مدمج + كلمات المستخدم)
+      const DEFAULT_BAD_WORDS = [
+        "يامطيز","مطيز","انيك عارك","يا عارك","عاركك","يا فتال","نيك","ينيك","زنخه",
+        "يبن القحبه","قحبه","القحبة","امك نيك","فكيو","فاكيو","زبي","بتاع","كسمك",
+        "المنيوك","انيوك","خرا","خره","زباله","قذر","وسخ","مقرف","كلب","حمار","غبي",
+        "سافل","قحبة","عرص","تيز","زبله","اهبل","مغفل","بليد"
+      ];
+      const dictOn = cfg.dictionaryOn !== false;
+      const customWords = Array.isArray(cfg.bannedWords)
+        ? cfg.bannedWords
+        : String(cfg.bannedWords || "").split(/[\n,،]/).map((w) => w.trim()).filter(Boolean);
+      const dictWords = dictOn ? Array.from(new Set([...customWords, ...DEFAULT_BAD_WORDS])) : [];
+      if (dictOn && dictWords.length) {
         const lowerText = rawText.toLowerCase();
-        const hasBadWord = cfg.bannedWords.some(w => w.trim() && lowerText.includes(w.trim().toLowerCase()));
+        const hasBadWord = dictWords.some((w) => w.trim() && lowerText.includes(w.trim().toLowerCase()));
         if (hasBadWord && m.key.remoteJid?.includes("@g.us") && !m.key.fromMe) {
           try {
             await sock.sendMessage(m.key.remoteJid, { delete: m.key });
             console.log(`[security][${bot.id}] deleted message containing bad word from ${m.key.participant}`);
             await addLog(bot.id, "badword_deleted", { chat: m.key.remoteJid, sender: m.key.participant });
           } catch (e) {
-            console.warn(`[security][${bot.id}] failed to delete bad word message:`, e.message);
+            console.warn(`[security][${bot.id}] failed to delete bad word message (needs admin?):`, e.message);
           }
           continue; // Skip further processing
         }
@@ -1217,9 +1244,16 @@ async function handleChatMessage(session, m, cfg) {
           );
           const botIsAdmin = botParticipant?.admin === "admin" || botParticipant?.admin === "superadmin";
 
-          if (!botIsAdmin) {
+if (!botIsAdmin) {
             await sock.sendMessage(chat, {
-              text: `⚠️ يا غالي البوت ليس مشرفاً في مجموعة *${targetGroup.subject}*!\nارفع البوت مشرف أولاً في المجموعة ليتمكن من ترقيتك.`
+              text: `⚠️ يا غالي البوت ليس مشرفاً في مجموعة *${targetGroup.subject}*!\nارفع البوت مشرفاً أولاً في المجموعة ليتمكن من ترقيتك.`
+            }, { quoted: m });
+            return;
+          }
+
+          if (!senderCanAdmin(bot, groupMeta, sender)) {
+            await sock.sendMessage(chat, {
+              text: "⚠️ هذا الأمر مقتصر على مالك البوت أو مشرفي المجموعة فقط."
             }, { quoted: m });
             return;
           }
@@ -1245,6 +1279,13 @@ async function handleChatMessage(session, m, cfg) {
           if (!botIsAdmin) {
             await sock.sendMessage(chat, {
               text: "⚠️ يا غالي، البوت ليس مشرفاً (Admin) في هذه المجموعة حالياً!\nيرجى رفع البوت مشرفاً أولاً في المجموعة حتى يتمكن من ترقيتك."
+            }, { quoted: m });
+            return;
+          }
+
+          if (!senderCanAdmin(bot, groupMetadata, sender)) {
+            await sock.sendMessage(chat, {
+              text: "⚠️ هذا الأمر مقتصر على مالك البوت أو مشرفي المجموعة فقط."
             }, { quoted: m });
             return;
           }
@@ -1296,6 +1337,11 @@ async function handleChatMessage(session, m, cfg) {
 
         if (!botIsAdmin) {
           await sock.sendMessage(chat, { text: "⚠️ يجب أن يكون البوت مشرفاً لتنفيذ أوامر الإدارة." }, { quoted: m });
+          return;
+        }
+
+        if (!senderCanAdmin(bot, groupMetadata, sender)) {
+          await sock.sendMessage(chat, { text: "⚠️ هذه الأوامر مخصصة لمالك البوت أو مشرفي المجموعة فقط." }, { quoted: m });
           return;
         }
 

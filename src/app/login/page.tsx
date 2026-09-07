@@ -1,8 +1,12 @@
 import SiteHeader from "@/components/site-header";
 import SiteFooter from "@/components/site-footer";
 import LoginClient from "./login-client";
+import { getServerLocale } from "@/lib/server-locale";
+import { tr } from "@/lib/i18n";
 
-export default function LoginPage() {
+export default async function LoginPage() {
+  const locale = await getServerLocale();
+  const t = (s: string) => tr(locale, s);
   return (
     <div className="flex min-h-dvh flex-col">
       <SiteHeader />
@@ -18,7 +22,7 @@ export default function LoginPage() {
             </div>
             <div className="mt-8 text-center">
               <h2 className="text-2xl font-bold font-mono">Hatem <span className="text-accent">X</span></h2>
-              <p className="mt-2 max-w-xs text-sm text-muted">أتمتة وحماية واتساب الذكية عبر منصة Hatem X — سحابياً 24/7.</p>
+              <p className="mt-2 max-w-xs text-sm text-muted">{t("أتمتة وحماية واتساب الذكية عبر منصة Hatem X — سحابياً 24/7.")}</p>
             </div>
           </div>
 
