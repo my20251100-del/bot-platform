@@ -503,7 +503,8 @@ async function startBotSession(bot, waVersion, opts = {}) {
     const rawPhone = bot.phone || bot.linked_number || "";
     const digits = rawPhone.replace(/\D/g, "");
     const wantsPairingCode = bot.link_method === "pair_code" && digits.length >= 10;
-    const isAlreadyRegistered = Boolean(state?.creds?.registered);
+    const isDeadSession = String(bot.metadata?.last_error || "").includes("code 428");
+    const isAlreadyRegistered = Boolean(state?.creds?.registered) && !isDeadSession;
     const is515Restart = Boolean(opts?.is515Restart);
 
     if (wantsPairingCode && !isAlreadyRegistered && !is515Restart && bot.status !== "connected") {
@@ -800,6 +801,31 @@ async function handleConnectionClose(session, error) {
         startBotSession(session.bot, session.waVersion, { is515Restart: true });
       }
     }, 1000);
+    return;
+  }
+
+  // 4.x Code 428 on a linked/registered bot — WhatsApp terminated the session.
+  // Force a fresh pairing code instead of retrying with dead credentials.
+  if (code === 428 && isRegistered) {
+    console.log(`[WA][${botId}] code 428 on linked bot — forcing fresh pairing...`);
+    await session.destroy("428_force_pairing");
+    activeSessions.delete(botId);
+    if (typeof session.clearStore === "function") {
+      try { await session.clearStore(); } catch {}
+    } else {
+      try { await supabase.from("bot_auth").delete().eq("bot_id", botId); } catch {}
+      try { await supabase.from("bot_keys").delete().eq("bot_id", botId); } catch {}
+    }
+    await updateBot(botId, {
+      status: "pending",
+      command: "start",
+      pair_code: null,
+      qr: null,
+      linked_number: null,
+      metadata: { last_error: "code 428 — تم إعادة تعيين الجلسة، يُرجى الاقتران مجددًا", error_at: new Date().toISOString(), attempt: 0 },
+    });
+    await addLog(botId, "428_force_pairing", { code });
+    startBotSession(session.bot, session.waVersion);
     return;
   }
 
