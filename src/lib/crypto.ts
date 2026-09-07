@@ -1,80 +1,69 @@
-import crypto from "crypto";
+import { createHash, createCipheriv, createDecipheriv, randomBytes } from "crypto";
 
-// خوارزمية التشفير القياسية المعتمدة عالمياً
-const ALGORITHM = "aes-256-gcm";
-const IV_LENGTH = 12; // 96 bits recommended for GCM
-const AUTH_TAG_LENGTH = 16; // 128 bits auth tag
+const ALGO = "aes-256-gcm";
+const PREFIX = "enc:v1:";
+const SALT = "hatemx-bot-at-rest-v1";
 
-/**
- * استرجاع مفتاح التشفير من متغيرات البيئة في Backend فقط
- * ممنوع تسريب المفتاح إلى Frontend أو الكود المصدري
- */
-function getEncryptionKey(): Buffer {
-  const secret = process.env.ENCRYPTION_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!secret) {
-    throw new Error("ENCRYPTION_KEY أو SUPABASE_SERVICE_ROLE_KEY غير مُعرّف — لا يمكن بدء التشفير بأمان");
-  }
-  return crypto.createHash("sha256").update(secret).digest();
+function deriveKeyFrom(seed: string): Buffer {
+  return createHash("sha256").update(`${SALT}:${seed}`).digest();
 }
 
-/**
- * تشفير البيانات الحساسة باستخدام AES-256-GCM مع التحقق من السلامة (Authenticated Encryption)
- * @param plaintext النص الصريح المراد تشفيره
- * @returns نص مشفر بتنسيق Base64 يحتوي على: iv + ciphertext + authTag
- */
-export function encryptData(plaintext: string): string {
-  if (!plaintext || typeof plaintext !== "string") {
-    throw new Error("Invalid plaintext input: Must be a non-empty string");
-  }
-
-  const key = getEncryptionKey();
-  const iv = crypto.randomBytes(IV_LENGTH);
-
-  const cipher = crypto.createCipheriv(ALGORITHM, key, iv, {
-    authTagLength: AUTH_TAG_LENGTH,
-  });
-
-  let ciphertext = cipher.update(plaintext, "utf8");
-  ciphertext = Buffer.concat([ciphertext, cipher.final()]);
-  const authTag = cipher.getAuthTag();
-
-  // دمج IV + Ciphertext + AuthTag في حزمة واحدة بتنسيق Base64
-  const payload = Buffer.concat([iv, authTag, ciphertext]);
-  return payload.toString("base64");
+// المفتاح الافتراضي للكتابة: متغير صريح أو مفتاح الخدمة
+function deriveKey(): Buffer {
+  const seed = process.env.APP_ENCRYPTION_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+  return deriveKeyFrom(seed);
 }
 
-/**
- * فك تشفير البيانات الحساسة مع التحقق الصارم من التلاعب والمفتاح
- * @param encryptedPayload النص المشفر بتنسيق Base64
- * @returns النص الأصلي بعد فك التشفير
- */
-export function decryptData(encryptedPayload: string): string {
-  if (!encryptedPayload || typeof encryptedPayload !== "string") {
-    throw new Error("Invalid ciphertext input: Must be a valid Base64 string");
+// قائمة مفاتيح فك التشفير: نجرّبها كلها لأن المحرك ومسارات الـ API قد يعملان بمتغيرات مختلفة
+function candidateKeys(): Buffer[] {
+  const seeds = [
+    process.env.APP_ENCRYPTION_KEY,
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    process.env.SUPABASE_SERVICE_KEY,
+    process.env.SUPABASE_KEY,
+    "",
+  ];
+  const seen = new Set<string>();
+  const keys: Buffer[] = [];
+  for (const seed of seeds) {
+    const key = deriveKeyFrom(String(seed || ""));
+    const id = key.toString("hex");
+    if (!seen.has(id)) {
+      seen.add(id);
+      keys.push(key);
+    }
   }
+  return keys;
+}
 
-  const key = getEncryptionKey();
-  const buffer = Buffer.from(encryptedPayload, "base64");
+export function isEncrypted(value: unknown): value is string {
+  return typeof value === "string" && value.startsWith(PREFIX);
+}
 
-  if (buffer.length < IV_LENGTH + AUTH_TAG_LENGTH) {
-    throw new Error("Malformed payload: Data length is too short to be valid AES-GCM");
+export function encryptValue(plain: string): string {
+  if (!plain) return "";
+  const key = deriveKey();
+  const iv = randomBytes(12);
+  const cipher = createCipheriv(ALGO, key, iv);
+  const data = Buffer.concat([cipher.update(String(plain), "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return PREFIX + Buffer.concat([iv, tag, data]).toString("base64");
+}
+
+export function decryptValue(cipher: string): string {
+  if (!isEncrypted(cipher)) return cipher;
+  for (const key of candidateKeys()) {
+    try {
+      const raw = Buffer.from(cipher.slice(PREFIX.length), "base64");
+      const iv = raw.subarray(0, 12);
+      const tag = raw.subarray(12, 28);
+      const data = raw.subarray(28);
+      const decipher = createDecipheriv(ALGO, key, iv);
+      decipher.setAuthTag(tag);
+      return Buffer.concat([decipher.update(data), decipher.final()]).toString("utf8");
+    } catch {
+      // مفتاح غير مطابق — نجرب التالي
+    }
   }
-
-  const iv = buffer.subarray(0, IV_LENGTH);
-  const authTag = buffer.subarray(IV_LENGTH, IV_LENGTH + AUTH_TAG_LENGTH);
-  const ciphertext = buffer.subarray(IV_LENGTH + AUTH_TAG_LENGTH);
-
-  const decipher = crypto.createDecipheriv(ALGORITHM, key, iv, {
-    authTagLength: AUTH_TAG_LENGTH,
-  });
-
-  decipher.setAuthTag(authTag);
-
-  try {
-    let decrypted = decipher.update(ciphertext, undefined, "utf8");
-    decrypted += decipher.final("utf8");
-    return decrypted;
-  } catch {
-    throw new Error("Decryption failed: Key mismatch, tampered data, or corrupted auth tag");
-  }
+  return "";
 }

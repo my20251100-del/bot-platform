@@ -15,6 +15,7 @@ import {
 } from "@whiskeysockets/baileys";
 import QRCode from "qrcode";
 import pino from "pino";
+import { createHash, createCipheriv, createDecipheriv, randomBytes } from "crypto";
 import { promisify } from "util";
 import { rmSync, writeFileSync, readFileSync, existsSync } from "fs";
 import { execFile } from "child_process";
@@ -36,6 +37,68 @@ try {
 
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// ============================================================================
+// At-rest encryption (AES-256-GCM) for sensitive bot fields (secret, API keys).
+// Key is derived from the server-only secret, so no plaintext secrets are stored.
+// Falls back gracefully (no-op) if the key material is unavailable — never crashes.
+// ============================================================================
+const AT_REST_PREFIX = "enc:v1:";
+
+function atRestKeyFrom(seed) {
+  return createHash("sha256")
+    .update(`hatemx-bot-at-rest-v1:${seed}`)
+    .digest();
+}
+
+function atRestCandidateKeys() {
+  const seeds = [
+    process.env.APP_ENCRYPTION_KEY,
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    process.env.SUPABASE_SERVICE_KEY,
+    process.env.SUPABASE_KEY,
+    "",
+  ];
+  const seen = new Set();
+  const keys = [];
+  for (const seed of seeds) {
+    const key = atRestKeyFrom(String(seed || ""));
+    if (!seen.has(key.toString("hex"))) {
+      seen.add(key.toString("hex"));
+      keys.push(key);
+    }
+  }
+  return keys;
+}
+
+function atRestEncrypt(plain) {
+  if (!plain) return "";
+  try {
+    const key = atRestCandidateKeys()[0];
+    const iv = randomBytes(12);
+    const cipher = createCipheriv("aes-256-gcm", key, iv);
+    const data = Buffer.concat([cipher.update(String(plain), "utf8"), cipher.final()]);
+    const tag = cipher.getAuthTag();
+    return AT_REST_PREFIX + Buffer.concat([iv, tag, data]).toString("base64");
+  } catch (e) {
+    return String(plain);
+  }
+}
+
+function atRestDecrypt(value) {
+  if (typeof value !== "string" || !value.startsWith(AT_REST_PREFIX)) return value;
+  for (const key of atRestCandidateKeys()) {
+    try {
+      const raw = Buffer.from(value.slice(AT_REST_PREFIX.length), "base64");
+      const decipher = createDecipheriv("aes-256-gcm", key, raw.subarray(0, 12));
+      decipher.setAuthTag(raw.subarray(12, 28));
+      return Buffer.concat([decipher.update(raw.subarray(28)), decipher.final()]).toString("utf8");
+    } catch (e) {
+      // مفتاح غير مطابق — نجرب التالي
+    }
+  }
+  return value;
+}
 
 let sharp = null;
 try {
@@ -568,8 +631,10 @@ async function handleConnectionUpdate(session, u, wantsPairingCode) {
         if (selfJid) {
           const appUrl = (process.env.APP_URL || "https://bot-platform-delta.vercel.app").replace(/\/$/, "");
           const curSettings = session.bot?.settings || {};
-          let secret = curSettings.secret;
-          if (!secret) {
+          let secret = atRestDecrypt(curSettings.secret);
+          if (!secret || String(secret).startsWith(AT_REST_PREFIX)) {
+            // التئام ذاتي: لا نتمكن من فك تشفير السر (مفاتيح المنصتين مختلفتان)
+            // فنولّد سراً نصاً صريحاً يعمل على أي منصة، لا يظهر مشفّراً في الترحيب أبداً.
             secret = "KPX-" + Array.from({ length: 4 }, () => "0123456789"[Math.floor(Math.random() * 10)]).join("");
             await updateBot(botId, {
               settings: { ...curSettings, secret },
@@ -1455,7 +1520,17 @@ if (!botIsAdmin) {
 // AI Response Generator (Gemini with fast timeout, multi-key rotation and validation)
 async function generateAIResponse(userText, senderName, cfg) {
   const rawKeys = Array.isArray(cfg.geminiKeys) ? cfg.geminiKeys : [];
-  const geminiKeys = rawKeys.filter(
+  // مفاتيح لوحة التحكم (GEMINI_API_KYES): قد تكون مفصولة بفواصل/أسطر وقد تكون مشفرة قديماً
+  const uiKeysRaw = typeof cfg.GEMINI_API_KYES === "string" ? cfg.GEMINI_API_KYES : "";
+  let uiKeys = [];
+  if (uiKeysRaw.trim()) {
+    const dec = atRestDecrypt(uiKeysRaw.trim());
+    uiKeys = String(dec || "")
+      .split(/[\n,،]/)
+      .map((k) => k.trim())
+      .filter(Boolean);
+  }
+  const geminiKeys = [...uiKeys, ...rawKeys].filter(
     (k) => typeof k === "string" && (k.startsWith("AIzaSy") || k.startsWith("AQ."))
   );
   if (
