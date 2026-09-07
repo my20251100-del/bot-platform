@@ -8,6 +8,14 @@ import { signConnectToken, verifyConnectToken } from "@/lib/connect-token";
 
 export const runtime = "nodejs";
 
+const L = (lang: string | undefined, ar: string, en: string) => (lang === "en" ? en : ar);
+
+function maskPhone(phone: string | null | undefined): string {
+  const d = String(phone || "").replace(/\D/g, "");
+  if (d.length < 5) return "";
+  return `•••• •••• ${d.slice(-4)}`;
+}
+
 function toBotPayload(b: any, digits: string) {
   const isPending =
     b.status === "pending" || !!b.qr || (!!b.pair_code && !b.linked_number && b.command === "start");
@@ -15,7 +23,7 @@ function toBotPayload(b: any, digits: string) {
     id: b.id,
     name: b.name,
     status: b.status,
-    linked_number: b.linked_number ?? (b.phone ? b.phone : null),
+    linked_number: maskPhone(b.linked_number ?? (b.phone ? b.phone : null)),
     link_method: b.link_method,
     pair_code: b.pair_code ?? null,
     qr: b.qr ?? null,
@@ -125,26 +133,27 @@ async function ensureSystemUser(admin: any, digits: string) {
 // — يمنع إنشاء أكثر من بوت لنفس الرقم، ويترك الكود الحقيقي يولّده المحرك (Baileys).
 export async function POST(req: NextRequest) {
   try {
+    const body = await req.json();
+    const lang: string | undefined = body?.lang;
     const ip = clientIp(req);
     const perIp = rateLimit({ key: `connect:ip:${ip}`, limit: 8, windowMs: 10 * 60 * 1000 });
     if (!perIp.ok) {
       return NextResponse.json(
-        { error: "طلبات كثيرة من هذا الجهاز، حاول بعد قليل", retryAfterSec: perIp.retryAfterSec },
+        { error: L(lang, "طلبات كثيرة من هذا الجهاز، حاول بعد قليل", "Too many requests from this device, try again later"), retryAfterSec: perIp.retryAfterSec },
         { status: 429 }
       );
     }
 
-    const body = await req.json();
     const rawNumber = body.number || body.phone;
     const action = body.action || "start";
     const botName = body.name || body.botName;
     const token = typeof body.token === "string" ? body.token : null;
 
-    if (!rawNumber) return NextResponse.json({ error: "أدخل رقم الواتساب" }, { status: 400 });
+    if (!rawNumber) return NextResponse.json({ error: L(lang, "أدخل رقم الواتساب", "Enter the WhatsApp number") }, { status: 400 });
 
     const digits = normalizePhoneNumber(rawNumber);
     if (!isValidWhatsAppPhone(digits))
-      return NextResponse.json({ error: "رقم واتساب غير صالح" }, { status: 400 });
+      return NextResponse.json({ error: L(lang, "رقم واتساب غير صالح", "Invalid WhatsApp number") }, { status: 400 });
 
     const admin = createAdmin();
 
@@ -177,7 +186,7 @@ export async function POST(req: NextRequest) {
         .select("id, user_id, name, status, command, link_method, pair_code, qr, linked_number, settings, phone, metadata")
         .single();
       if (insErr || !created) {
-        return NextResponse.json({ error: insErr?.message || "تعذّر إنشاء البوت" }, { status: 500 });
+        return NextResponse.json({ error: insErr?.message || L(lang, "تعذّر إنشاء البوت", "Failed to create the bot") }, { status: 500 });
       }
       bot = created;
     } else if (action === "start" || action === "reset") {
@@ -185,7 +194,7 @@ export async function POST(req: NextRequest) {
       const authorized = await canControlBot(token, digits, bot);
       if (!authorized) {
         return NextResponse.json(
-          { error: "غير مصرح — هذا البوت مسجّل لمالك آخر. سجّل الدخول كمالك البوت أو استخدم توكن الربط الصادر لك." },
+          { error: L(lang, "غير مصرح — هذا البوت مسجّل لمالك آخر. سجّل الدخول كمالك البوت أو استخدم توكن الربط الصادر لك.", "Unauthorized — this bot belongs to another owner. Log in as the bot owner or use your pairing token.") },
           { status: 403 }
         );
       }

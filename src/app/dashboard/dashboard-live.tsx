@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { maskPhone } from "@/lib/phone";
 import { Reveal, AnimatedNumber, Ring } from "@/components/ui/motion";
 import CreateBotForm from "./create-bot-form";
 
@@ -203,7 +204,7 @@ export default function DashboardLive({
                   </span>
                 </div>
                 <p className="mt-1 text-sm text-muted">
-                  {bot.linked_number ? `+${bot.linked_number}` : (bot.phone || "بدون رقم")} · عبر{" "}
+                  {bot.linked_number ? maskPhone(bot.linked_number) : (maskPhone(bot.phone) || "بدون رقم")} · عبر{" "}
                   {bot.link_method === "qr" ? "رمز QR" : "كود اقتران"}
                 </p>
               </div>

@@ -37,19 +37,38 @@ const GATE_HINTS = {
 };
 
 export default function AutoReplyPage() {
+  const { t } = useI18n();
+  useEffect(() => {
+    const sp = new URLSearchParams(globalThis.location?.search || "");
+    const q = new URLSearchParams();
+    q.set("tab", "autoreply");
+    if (sp.get("number")) q.set("number", sp.get("number") || "");
+    if (sp.get("secret")) q.set("secret", sp.get("secret") || "");
+    globalThis.location.replace(`/bot/setting?${q.toString()}`);
+  }, []);
+  return (
+    <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted">
+      {t("جارٍ فتح لوحة التحكم...")}
+    </div>
+  );
+}
+
+export function AutoReplyTab({ number, secret }: { number: string; secret: string }) {
+  return <AutoReplyCore embedded={{ number, secret }} />;
+}
+
+function AutoReplyCore({ embedded }: { embedded?: { number: string; secret: string } }) {
   const { t, locale } = useI18n();
 
   const [session, setSession] = useState<BotSession | null>(null);
-  const [number, setNumber] = useState(() => {
-    if (typeof window === "undefined") return "";
-    const sp = new URLSearchParams(window.location.search);
-    return (sp.get("number") || sp.get("phone") || "").replace(/\D/g, "");
-  });
-  const [secret, setSecret] = useState(() => {
-    if (typeof window === "undefined") return "";
-    const sp = new URLSearchParams(window.location.search);
-    return sp.get("secret") || "";
-  });
+  const [number, setNumber] = useState(() =>
+    embedded?.number ??
+    (typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("number")?.replace(/\D/g, "") ?? "")
+  );
+  const [secret, setSecret] = useState(() =>
+    embedded?.secret ??
+    (typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("secret") || "")
+  );
   const [gateError, setGateError] = useState<string | null>(null);
   const [gateLoading, setGateLoading] = useState(false);
 
@@ -92,20 +111,14 @@ export default function AutoReplyPage() {
     recStream.current?.stream?.getTracks().forEach((t) => t.stop());
   }, []);
 
-  const confirmIdentity = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const digits = number.replace(/\D/g, "");
-    if (!digits || digits.length < 9) {
-      setGateError(t("أدخل رقم واتساب صالح مع رمز الدولة"));
-      return;
-    }
+  const authorize = async (digits: string, sec: string) => {
     setGateLoading(true);
     setGateError(null);
     try {
       const res = await fetch("/api/autoreply", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ number: digits, secret: secret.trim(), lang: locale }),
+        body: JSON.stringify({ number: digits, secret: sec.trim(), lang: locale }),
       });
       const data = await res.json();
       if (!res.ok || !data.ok) {
@@ -123,6 +136,24 @@ export default function AutoReplyPage() {
       setGateLoading(false);
     }
   };
+
+  const confirmIdentity = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const digits = number.replace(/\D/g, "");
+    if (!digits || digits.length < 9) {
+      setGateError(t("أدخل رقم واتساب صالح مع رمز الدولة"));
+      return;
+    }
+    await authorize(digits, secret.trim());
+  };
+
+  useEffect(() => {
+    if (!embedded || session) return;
+    const id = setTimeout(() => {
+      void authorize(embedded.number.replace(/\D/g, ""), embedded.secret.trim());
+    }, 0);
+    return () => clearTimeout(id);
+  }, [embedded?.number, embedded?.secret]);
 
   // تحديث تفاؤلي + حفظ سيرفراً (المحرك يلتقط التغيير خلال ثوانٍ)
   const persist = async (nextReplies: ReplyItem[], nextActive: boolean) => {
@@ -268,6 +299,16 @@ export default function AutoReplyPage() {
   };
 
   if (!session) {
+    if (embedded) {
+      return (
+        <div className="flex min-h-[30vh] items-center justify-center">
+          <div className="flex flex-col items-center gap-3 text-sm text-muted">
+            <span className="h-6 w-6 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+            {gateError ? <p className="text-center text-danger">⚠ {gateError}</p> : t("جارٍ تحميل الرد التلقائي...")}
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="mx-auto max-w-md px-4 py-6 sm:py-10">
         <form onSubmit={confirmIdentity} className="card relative p-6 opacity-0 animate-fade-up sm:p-8" style={{ animationDelay: "80ms" }}>
@@ -334,8 +375,8 @@ export default function AutoReplyPage() {
   const activeCount = replies.filter((r) => r.active).length;
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-12 sm:py-16">
-      <header className="mb-12 flex flex-col items-center text-center animate-fade-up">
+    <div className={embedded ? "w-full" : "mx-auto max-w-4xl px-4 py-12 sm:py-16"}>
+      <header className={embedded ? "mb-8 flex flex-col items-center text-center animate-fade-up" : "mb-12 flex flex-col items-center text-center animate-fade-up"}>
         <button
           type="button"
           onClick={toggleSystem}

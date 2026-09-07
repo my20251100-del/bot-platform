@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { maskPhone } from "@/lib/phone";
 
 interface GroupItem {
   id: string;
@@ -82,7 +83,7 @@ export default function GroupsClient({
             >
               {bots.map((b) => (
                 <option key={b.id} value={b.id}>
-                  {b.name} — {b.linked_number || b.phone || "غير متصل"} ({b.status === "connected" ? "متصل ✅" : "غير متصل ❌"})
+                  {b.name} — {maskPhone(b.linked_number || b.phone) || "غير متصل"} ({b.status === "connected" ? "متصل ✅" : "غير متصل ❌"})
                 </option>
               ))}
             </select>

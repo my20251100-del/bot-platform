@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { maskPhone } from "@/lib/phone";
 import CyberButton from "@/components/ui/cyber-button";
 
 type BotOption = {
@@ -78,7 +79,7 @@ export default function ScheduleForm({ bots }: { bots: BotOption[] }) {
             {bots.map((b) => (
               <option key={b.id} value={b.id}>
                 {b.name}
-                {b.linked_number ? ` (${b.linked_number})` : ""}
+                {b.linked_number ? ` (${maskPhone(b.linked_number)})` : ""}
               </option>
             ))}
           </select>

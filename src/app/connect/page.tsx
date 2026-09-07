@@ -375,7 +375,7 @@ export default function ConnectPage() {
             </p>
             <div className="flex flex-col gap-3 pt-2">
               <Link
-                href={`/setting?number=${encodeURIComponent(bot.linked_number || number)}${bot.secret ? `&secret=${encodeURIComponent(bot.secret)}` : ""}`}
+                href={`/bot/setting?number=${encodeURIComponent(bot.linked_number || number)}${bot.secret ? `&secret=${encodeURIComponent(bot.secret)}` : ""}`}
                 className="btn-primary w-full py-3.5 text-base font-bold shadow-lg shadow-accent/25"
               >
                 فتح المميزات ولوحة التحكم 🚀

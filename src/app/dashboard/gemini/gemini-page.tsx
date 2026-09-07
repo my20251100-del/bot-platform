@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { maskPhone } from "@/lib/phone";
 import CyberButton from "@/components/ui/cyber-button";
 import { Skeleton } from "@/components/ui/motion";
 
@@ -103,7 +104,7 @@ export default function GeminiPage() {
           <div>
             <label className="mb-1.5 block text-sm font-medium">اختر البوت</label>
             <select className="input" value={selected} onChange={(e) => onPick(e.target.value)}>
-              {bots.map((b) => <option key={b.id} value={b.id}>{b.name} — {b.linked_number || b.phone || "غير متصل"}</option>)}
+              {bots.map((b) => <option key={b.id} value={b.id}>{b.name} — {maskPhone(b.linked_number || b.phone) || "غير متصل"}</option>)}
             </select>
           </div>
 

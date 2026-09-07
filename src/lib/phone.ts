@@ -29,3 +29,10 @@ export function isValidWhatsAppPhone(phone: string): boolean {
 export function toDisplayPhone(phone: string): string {
   return "+" + normalizePhoneNumber(phone);
 }
+
+// إخفاء الرقم: لا يُعرض الرقم كاملاً أبداً، آخر 4 أرقام فقط للتمييز
+export function maskPhone(phone: string | null | undefined): string {
+  const d = String(phone || "").replace(/\D/g, "");
+  if (d.length < 5) return "";
+  return `•••• •••• ${d.slice(-4)}`;
+}

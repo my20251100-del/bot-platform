@@ -13,8 +13,16 @@
   --color-accent: #00d4ff;
   --color-accent-hover: #00b8e6;
   --color-accent-fg: #04121a;
+  --color-accent-soft: #082028;
+  --color-danger: #ff2d2d;
+  --color-success: #00ff41;
+
+  --animate-fade-up: fade-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-fade-in: fade-in 0.35s ease both;
+  --animate-fade-in-out: fade-in 0.35s ease both;
 
   --font-sans: var(--font-cairo), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
   --font-tech: var(--font-tech), ui-monospace, monospace;
 }
 

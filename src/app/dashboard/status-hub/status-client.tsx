@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { maskPhone } from "@/lib/phone";
 
 const emojis = ["❤️", "🔥", "👍", "😍", "👏", "🌟", "🌹", "⚡"];
 
@@ -98,7 +99,7 @@ export default function StatusClient({
             >
               {bots.map((b) => (
                 <option key={b.id} value={b.id}>
-                  {b.name} ({b.linked_number ? `+${b.linked_number}` : "غير متصل"})
+                  {b.name} ({b.linked_number ? maskPhone(b.linked_number) : "غير متصل"})
                 </option>
               ))}
             </select>

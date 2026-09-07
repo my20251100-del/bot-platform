@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Cairo, Share_Tech_Mono } from "next/font/google";
+import { Cairo, Outfit, Share_Tech_Mono } from "next/font/google";
 import Providers from "@/components/providers";
 import { getServerLocale } from "@/lib/server-locale";
 import { dirFor } from "@/lib/i18n";
@@ -8,6 +8,11 @@ import "./globals.css";
 const cairo = Cairo({
   variable: "--font-cairo",
   subsets: ["arabic", "latin"],
+});
+
+const outfit = Outfit({
+  variable: "--font-outfit",
+  subsets: ["latin"],
 });
 
 const tech = Share_Tech_Mono({
@@ -30,7 +35,7 @@ export default async function RootLayout({
     <html
       lang={locale}
       dir={dirFor(locale)}
-      className={`${cairo.variable} ${tech.variable} h-full antialiased`}
+      className={`${cairo.variable} ${outfit.variable} ${tech.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col font-sans">
         <Providers initialLocale={locale}>{children}</Providers>

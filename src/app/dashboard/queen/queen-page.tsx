@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { maskPhone } from "@/lib/phone";
 import { Skeleton } from "@/components/ui/motion";
 import QueenForm from "./queen-form";
 
@@ -56,7 +57,7 @@ export default function QueenPage() {
             <select className="input" value={selected} onChange={(e) => pick(e.target.value)}>
               {bots.map((b) => (
                 <option key={b.id} value={b.id}>
-                  {b.name} — {b.linked_number || b.phone || "غير متصل"}
+                  {b.name} — {maskPhone(b.linked_number || b.phone) || "غير متصل"}
                 </option>
               ))}
             </select>

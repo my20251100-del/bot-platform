@@ -5,6 +5,7 @@ import ActiveBotsChArt from "@/components/active-bots-chart";
 import HomeHeroConnect from "@/components/home-hero-connect";
 import HomeBotSimulation from "@/components/home-bot-simulation";
 import HomeFaqAccordion from "@/components/home-faq-accordion";
+import HomeComments from "@/components/home-comments";
 import { getServerLocale } from "@/lib/server-locale";
 import { tr, type Locale } from "@/lib/i18n";
 import { createAdmin } from "@/lib/supabase/admin";
@@ -229,24 +230,36 @@ export default async function Home() {
 
         <section className="border-y border-border/70 bg-surface/60 backdrop-blur-xl">
           <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
-            <div className="grid grid-cols-2 gap-6 md:grid-cols-4">
-              <div className="text-center">
-                <div className="text-3xl sm:text-4xl font-extrabold text-accent font-mono">{totalBots.toLocaleString("en-US")}</div>
-                <p className="mt-1 text-xs sm:text-sm text-muted">{t("بوت واتساب على المنصة")}</p>
-              </div>
-              <div className="text-center">
-                <div className="text-3xl sm:text-4xl font-extrabold text-matrix font-mono">
-                  {totalBots > 0 ? `${Math.round((liveCounts.activeNow / totalBots) * 100)}%` : "0%"}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-4">
+              <div className="flex items-center gap-4 rounded-2xl border border-border/70 bg-elevated/50 p-5">
+                <span className="grid h-12 w-12 flex-shrink-0 place-items-center rounded-xl bg-accent/15 text-2xl shadow-inner">🤖</span>
+                <div>
+                  <div className="text-2xl sm:text-3xl font-extrabold text-accent font-mono">{totalBots.toLocaleString("en-US")}</div>
+                  <p className="mt-1 text-xs sm:text-sm text-muted">{t("بوت واتساب على المنصة")}</p>
                 </div>
-                <p className="mt-1 text-xs sm:text-sm text-muted">{t("من البوتات متصلة الآن")}</p>
               </div>
-              <div className="text-center">
-                <div className="text-3xl sm:text-4xl font-extrabold text-fuchsia-400 font-mono">{liveCounts.all.toLocaleString("en-US")}</div>
-                <p className="mt-1 text-xs sm:text-sm text-muted">{t("رسالة وحالة تمت معالجتها")}</p>
+              <div className="flex items-center gap-4 rounded-2xl border border-border/70 bg-elevated/50 p-5">
+                <span className="grid h-12 w-12 flex-shrink-0 place-items-center rounded-xl bg-matrix/15 text-2xl shadow-inner">📶</span>
+                <div>
+                  <div className="text-2xl sm:text-3xl font-extrabold text-matrix font-mono">
+                    {totalBots > 0 ? `${Math.round((liveCounts.activeNow / totalBots) * 100)}%` : "0%"}
+                  </div>
+                  <p className="mt-1 text-xs sm:text-sm text-muted">{t("من البوتات متصلة الآن")}</p>
+                </div>
               </div>
-              <div className="text-center">
-                <div className="text-3xl sm:text-4xl font-extrabold text-neon font-mono">{liveCounts.activeNow.toLocaleString("en-US")}</div>
-                <p className="mt-1 text-xs sm:text-sm text-muted">{t("بوت واتساب متصل الآن")}</p>
+              <div className="flex items-center gap-4 rounded-2xl border border-border/70 bg-elevated/50 p-5">
+                <span className="grid h-12 w-12 flex-shrink-0 place-items-center rounded-xl bg-fuchsia-400/15 text-2xl shadow-inner">💬</span>
+                <div>
+                  <div className="text-2xl sm:text-3xl font-extrabold text-fuchsia-400 font-mono">{liveCounts.all.toLocaleString("en-US")}</div>
+                  <p className="mt-1 text-xs sm:text-sm text-muted">{t("رسالة وحالة تمت معالجتها")}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-4 rounded-2xl border border-border/70 bg-elevated/50 p-5">
+                <span className="grid h-12 w-12 flex-shrink-0 place-items-center rounded-xl bg-neon/15 text-2xl shadow-inner">⚡</span>
+                <div>
+                  <div className="text-2xl sm:text-3xl font-extrabold text-neon font-mono">{liveCounts.activeNow.toLocaleString("en-US")}</div>
+                  <p className="mt-1 text-xs sm:text-sm text-muted">{t("بوت واتساب متصل الآن")}</p>
+                </div>
               </div>
             </div>
           </div>
@@ -291,6 +304,35 @@ export default async function Home() {
                 </div>
               </div>
             ))}
+          </div>
+        </section>
+
+        <section className="border-t border-border/70 bg-surface/40 py-20">
+          <div className="mx-auto max-w-6xl px-4 sm:px-6">
+            <div className="text-center mb-14">
+              <span className="badge mb-3">{t("المحفظة والمكافآت")}</span>
+              <h2 className="font-display text-3xl sm:text-4xl font-bold">{t("اربح الكريدت مجاناً كل يوم")}</h2>
+              <p className="mt-3 text-muted">{t("محفظتك ومزاياك في مكان واحد — اربح، اعرض، واستبدل متى شئت")}</p>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {[
+                { icon: "💰", title: t("محفظة كريدت"), desc: t("رصيدك الكامل يظهر فوراً، مع حركة صافرة وسجل شفاف") },
+                { icon: "💎", title: t("تحويل كريدت ذهبي"), desc: t("بدّل رصيدك إلى ذهبي بسعر تفضيلي 50:1") },
+                { icon: "🎁", title: t("مطالبة يومية"), desc: t("استلم كريدت مجانياً كل يوم بضغطة واحدة") },
+                { icon: "🎡", title: t("دورة الحظ اليومية"), desc: t("دوّر العجلة واربح جوائز يومية حصرية") },
+                { icon: "📺", title: t("شاهد واربح"), desc: t("شاهد إعلانات قصيرة واكسب كريدت دون عناء") },
+                { icon: "🔄", title: t("تحويل فوري"), desc: t("حوّل واستبدل رصيدك فورياً بين الميزات والترقيات") },
+              ].map((c) => (
+                <div key={c.title} className="card flex items-center gap-3 p-5">
+                  <span className="grid h-11 w-11 flex-shrink-0 place-items-center rounded-2xl bg-accent/15 text-xl">{c.icon}</span>
+                  <div>
+                    <h3 className="font-bold text-fg">{c.title}</h3>
+                    <p className="mt-0.5 text-xs text-muted leading-relaxed">{c.desc}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </section>
 
@@ -346,6 +388,38 @@ export default async function Home() {
         </section>
 
         <section className="border-t border-border/70 bg-surface/50 py-20">
+          <div className="mx-auto max-w-6xl px-4 sm:px-6">
+            <div className="text-center mb-12">
+              <span className="badge mb-3">{t("قريباً")}</span>
+              <h2 className="font-display text-3xl sm:text-4xl font-bold">{t("مزايا على الطريق إليك")}</h2>
+              <p className="mt-3 text-muted">{t("نعمل على إطلاق ميزات جديدة باستمرار لتوسيع عالم البوت")}</p>
+            </div>
+
+            <div className="flex flex-wrap justify-center gap-3">
+              {[
+                "🤖 بوت تيليغرام مجاني",
+                "📥 مدير تنزيلات منصات التواصل",
+                "🎵 موسيقى خلفية",
+                "📈 كريبتو وكركت مباشر",
+                "📰 أخبار مباشرة",
+                "🎬 تحميل أفلام",
+                "☁️ استضافة الويب",
+                "💬 دردشة مباشرة",
+                "🧠 أدوات ذكاء اصطناعي",
+                "🎓 تعليم أونلاين",
+              ].map((chip) => (
+                <span
+                  key={chip}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-elevated px-4 py-2 text-sm font-medium text-muted transition hover:border-accent/50 hover:text-fg"
+                >
+                  {chip}
+                </span>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="border-t border-border/70 bg-surface/50 py-20">
           <div className="mx-auto max-w-4xl px-4 sm:px-6">
             <div className="text-center mb-12">
               <span className="badge mb-3">{t("إجابات واضحة")}</span>
@@ -354,6 +428,17 @@ export default async function Home() {
             </div>
 
             <HomeFaqAccordion />
+          </div>
+        </section>
+
+        <section className="border-t border-border/70 bg-surface/40 py-20">
+          <div className="mx-auto max-w-6xl px-4 sm:px-6">
+            <div className="text-center mb-12">
+              <span className="badge mb-3">🗣️ {t("تقييمات المستخدمين")}</span>
+              <h2 className="font-display text-3xl sm:text-4xl font-bold">{t("ماذا يقول مستخدمونا؟")}</h2>
+              <p className="mt-3 text-muted">{t("شارك رأيك أو اقرأ تجارب الآخرين مع منصة Hatem X")}</p>
+            </div>
+            <HomeComments />
           </div>
         </section>
 

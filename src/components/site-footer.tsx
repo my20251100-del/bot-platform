@@ -2,10 +2,34 @@ import Link from "next/link";
 import LanguageToggle from "@/components/language-toggle";
 import { getServerLocale } from "@/lib/server-locale";
 import { tr } from "@/lib/i18n";
+import { createAdmin } from "@/lib/supabase/admin";
+
+function dayStartOffset(offsetMs: number) {
+  const d = new Date(Date.now() - offsetMs);
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString();
+}
+
+async function loadStats() {
+  const admin = createAdmin();
+  const [totalCount, connectedCount, logsAll, logsToday] = await Promise.all([
+    admin.from("bots").select("id", { count: "exact", head: true }),
+    admin.from("bots").select("id", { count: "exact", head: true }).eq("status", "connected"),
+    admin.from("bot_logs").select("id", { count: "exact", head: true }),
+    admin.from("bot_logs").select("id", { count: "exact", head: true }).gte("created_at", dayStartOffset(0)),
+  ]);
+  return {
+    totalBots: totalCount.count || 0,
+    activeNow: connectedCount.count || 0,
+    events: logsAll.count || 0,
+    today: logsToday.count || 0,
+  };
+}
 
 export default async function SiteFooter() {
   const locale = await getServerLocale();
   const t = (s: string) => tr(locale, s);
+  const stats = await loadStats();
 
   return (
     <footer className="border-t border-border/60 bg-surface">
@@ -100,6 +124,31 @@ export default async function SiteFooter() {
                 </Link>
               </li>
             </ul>
+          </div>
+        </div>
+      </div>
+
+      <div className="mx-auto max-w-6xl px-6 pt-4">
+        <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border/60 bg-border/60 sm:grid-cols-4">
+          <div className="flex flex-col items-center gap-1.5 bg-surface px-4 py-5 text-center">
+            <span className="grid h-10 w-10 place-items-center rounded-xl bg-accent/15 text-xl text-accent">🤖</span>
+            <p className="font-display text-2xl font-bold">{stats.totalBots.toLocaleString("en-US")}</p>
+            <p className="text-xs text-muted">{t("بوت على المنصة")}</p>
+          </div>
+          <div className="flex flex-col items-center gap-1.5 bg-surface px-4 py-5 text-center">
+            <span className="grid h-10 w-10 place-items-center rounded-xl bg-matrix/15 text-xl text-matrix">📶</span>
+            <p className="font-display text-2xl font-bold">{stats.activeNow.toLocaleString("en-US")}</p>
+            <p className="text-xs text-muted">{t("متصل الآن")}</p>
+          </div>
+          <div className="flex flex-col items-center gap-1.5 bg-surface px-4 py-5 text-center">
+            <span className="grid h-10 w-10 place-items-center rounded-xl bg-fuchsia-400/15 text-xl">💬</span>
+            <p className="font-display text-2xl font-bold">{stats.events.toLocaleString("en-US")}</p>
+            <p className="text-xs text-muted">{t("حدث معالج")}</p>
+          </div>
+          <div className="flex flex-col items-center gap-1.5 bg-surface px-4 py-5 text-center">
+            <span className="grid h-10 w-10 place-items-center rounded-xl bg-neon/15 text-xl text-neon">⚡</span>
+            <p className="font-display text-2xl font-bold">{stats.today.toLocaleString("en-US")}</p>
+            <p className="text-xs text-muted">{t("حدث اليوم")}</p>
           </div>
         </div>
       </div>

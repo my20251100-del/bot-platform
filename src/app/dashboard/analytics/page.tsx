@@ -80,10 +80,13 @@ export default function AdminAnalyticsPage() {
   }, []);
 
   useEffect(() => {
-    fetchData();
-    if (!autoRefresh) return;
+    const timer = setTimeout(fetchData, 0);
+    if (!autoRefresh) return () => clearTimeout(timer);
     const interval = setInterval(fetchData, 4000);
-    return () => clearInterval(interval);
+    return () => {
+      clearTimeout(timer);
+      clearInterval(interval);
+    };
   }, [fetchData, autoRefresh]);
 
   const runAction = async (botId: string, action: "start" | "stop") => {
@@ -521,9 +524,9 @@ export default function AdminAnalyticsPage() {
                       </span>
                     )}
                     {replyText && (
-                      <span className="text-muted line-clamp-1 max-w-md italic">
-                        "{replyText}"
-                      </span>
+<span className="text-muted line-clamp-1 max-w-md italic">
+  &ldquo;{replyText}&rdquo;
+</span>
                     )}
                   </div>
                   <span className="font-mono text-[11px] text-muted">

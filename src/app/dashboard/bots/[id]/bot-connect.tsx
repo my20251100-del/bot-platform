@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { maskPhone } from "@/lib/phone";
 
 type BotRow = {
   id: string;
@@ -134,7 +135,7 @@ export default function BotConnect({ initial }: { initial: BotRow }) {
 
           {bot.linked_number && (
             <span dir="ltr" className="text-sm font-mono text-accent">
-              +{bot.linked_number}
+              {maskPhone(bot.linked_number)}
             </span>
           )}
         </div>

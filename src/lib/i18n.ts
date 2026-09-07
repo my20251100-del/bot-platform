@@ -161,6 +161,11 @@ export const DICT: Record<string, { ar: string; en: string }> = {
   // ===== صفحة الإعدادات (Setting) =====
   "↻ إعادة تحميل": { ar: "↻ إعادة تحميل", en: "↻ Reload" },
   "إعدادات البوت": { ar: "إعدادات البوت", en: "Bot Settings" },
+  "لوحة تحكم البوت": { ar: "لوحة تحكم البوت", en: "Bot Control Panel" },
+  "إدارة كل شيء من مكان واحد": { ar: "إدارة كل شيء من مكان واحد", en: "Manage everything from one place" },
+  "جارٍ فتح لوحة التحكم...": { ar: "جارٍ فتح لوحة التحكم...", en: "Opening control panel..." },
+  "جارٍ تحميل الرد التلقائي...": { ar: "جارٍ تحميل الرد التلقائي...", en: "Loading auto replies..." },
+  "جارٍ تحميل الحفظ التلقائي...": { ar: "جارٍ تحميل الحفظ التلقائي...", en: "Loading auto save..." },
   "خصص رفيقك الآلي": { ar: "خصص رفيقك الآلي", en: "Customize your bot companion" },
   "نشط": { ar: "نشط", en: "Active" },
   "ضوابط الخصوصية": { ar: "ضوابط الخصوصية", en: "Privacy Controls" },
