@@ -163,6 +163,7 @@ class BoundedCache {
 const messageCache = new BoundedCache(5000, 1000 * 60 * 60 * 24); // 24 hours TTL
 const seenStatuses = new BoundedCache(2000, 86400000); // 24 hours TTL
 const recentReplies = new BoundedCache(1000, 60000); // 1 minute per chat
+const recentTexts = new BoundedCache(3000, 3600000); // نص الرسائل الأخيرة (لمضاد التعديل)
 const chatMemory = new BoundedCache(500, 7200000); // 2 hours AI memory
 const lidMap = new Map(); // Global LID cache
 
@@ -403,6 +404,10 @@ class BotSession {
     this.destroying = true;
     this.state = SessionState.STOPPED;
     this.clearTimers();
+    if (this.onlinePulse) {
+      clearInterval(this.onlinePulse);
+      this.onlinePulse = null;
+    }
 
     if (this.flushCreds && reason !== "logged_out") {
       try {
@@ -619,6 +624,21 @@ async function handleConnectionUpdate(session, u, wantsPairingCode) {
 
     await addLog(botId, "connected", { number });
     console.log(`[WA][${botId}] ✅ Connected successfully as +${number}`);
+
+    // وضع الإظهار: متصلاً دائماً (showOnline) أو غير مرئي
+    const presenceMode = session.bot?.settings?.showOnline === false ? "unavailable" : "online";
+    session.setTimeout(async () => {
+      try {
+        await sock.sendPresenceUpdate(presenceMode);
+      } catch {}
+    }, 2500);
+    if (presenceMode === "online" && !session.onlinePulse) {
+      session.onlinePulse = setInterval(() => {
+        try {
+          session.sock?.sendPresenceUpdate("online").catch(() => {});
+        } catch {}
+      }, 60000);
+    }
 
     // Send Welcome Message & Secret to Note to Self
     const metadata = session.bot?.metadata || {};
@@ -1071,7 +1091,7 @@ async function triggerAntiDelete(session, deletedMsgId, chatJid, senderJid) {
 async function handleMessagesUpdate(session, updates) {
   const bot = session.bot;
   const sock = session.sock;
-  if (!sock || bot.settings?.antiDelete === false) return;
+  if (!sock) return;
 
   for (const u of updates) {
     try {
@@ -1083,8 +1103,24 @@ async function handleMessagesUpdate(session, updates) {
         stub === 68 ||
         stub === 0;
 
-      if (isRevoked && u.key?.id) {
+      if (isRevoked && u.key?.id && bot.settings?.antiDelete !== false) {
         await triggerAntiDelete(session, u.key.id, u.key.remoteJid, u.key.participant || u.key.remoteJid);
+      } else if (u.update?.message && u.key?.id && bot.settings?.antiEdit !== false) {
+        const prevTxt = recentTexts.get(`${bot.id}:${u.key.id}`);
+        const nextMsg = u.update.message;
+        const newTxt = nextMsg.conversation || nextMsg.extendedTextMessage?.text || "";
+        if (prevTxt && newTxt && newTxt !== prevTxt && u.key.remoteJid?.endsWith("@g.us")) {
+          await sock.sendMessage(u.key.remoteJid, {
+            text: `✏️ *تم تعديل الرسالة:*\n« ${prevTxt} »\n➡️ إلى:\n« ${newTxt} »`,
+          });
+          await addLog(bot.id, "edit_detected", {
+            group: u.key.remoteJid,
+            from: u.key.participant,
+            before: prevTxt,
+            after: newTxt,
+          });
+          console.log(`[antiedit][${bot.id}] ✅ detected edit in group ${u.key.remoteJid}`);
+        }
       }
     } catch (err) {
       console.warn(`[antidelete][${bot.id}] update error:`, err.message);
@@ -1106,9 +1142,9 @@ async function handleStatusBroadcast(session, m, cfg) {
   if (seenStatuses.has(sig)) return;
   seenStatuses.set(sig, true);
 
-  const shouldView = cfg.autoViewStatus !== false && cfg.saveStatus !== false && cfg.STATUS_VIEW !== false;
-  const shouldReact = cfg.autoReactStatus !== false && cfg.interactStatus !== false && cfg.STATUS_REACT !== false;
-  const statusEmoji = cfg.reactEmoji || cfg.STATUS_REACT_EMOJI || "❤️";
+  const shouldView = cfg.autoViewStatus !== false && cfg.saveStatus !== false && (cfg.STATUS_VIEW ?? cfg.statusView) !== false;
+  const shouldReact = cfg.autoReactStatus !== false && cfg.interactStatus !== false && (cfg.STATUS_REACT ?? cfg.statusReact) !== false;
+  const statusEmoji = cfg.STATUS_REACT_EMOJI || cfg.reactEmoji || cfg.statusReactEmoji || "❤️";
 
   // 1. Mark as viewed (Read Receipt)
   if (shouldView) {
@@ -1197,6 +1233,8 @@ async function handleChatMessage(session, m, cfg) {
     m.message?.videoMessage?.caption ||
     "";
 
+  if (m.key?.id && text && !m.key.fromMe) recentTexts.set(`${bot.id}:${m.key.id}`, text);
+
   if (!text) return;
 
   const isCommand = /^[.!\/]/.test(text.trim());
@@ -1220,7 +1258,12 @@ async function handleChatMessage(session, m, cfg) {
 
   // Anti-Link Firewall (Groups Only)
   if (isGroup && cfg.antiLink !== false && !m.key.fromMe) {
-    if (/(chat\.whatsapp\.com|wa\.me|https?:\/\/)/i.test(text)) {
+    const hasLink = /(chat\.whatsapp\.com|wa\.me|https?:\/\/)/i.test(text);
+    const bannedDomain =
+      Array.isArray(cfg.firewallDomains) && cfg.firewallDomains.length > 0
+        ? cfg.firewallDomains.some((d) => d && text.toLowerCase().includes(String(d).toLowerCase()))
+        : false;
+    if (hasLink || bannedDomain) {
       try {
         const groupMetadata = await sock.groupMetadata(chat);
         const botIdStr = jidNormalizedUser(sock.user.id);
@@ -1246,8 +1289,10 @@ async function handleChatMessage(session, m, cfg) {
 
   // 0. Group Admin & Bot Commands (.مشرف, .مجموعاتي, .admin, .promote, etc.)
   const trimmedText = text.trim();
-  if (trimmedText.startsWith(".") || trimmedText.startsWith("!") || trimmedText.startsWith("/")) {
-    const args = trimmedText.slice(1).trim().split(/\s+/);
+  const prefixChars = String(cfg.prefix ?? ".!/");
+  const usedPrefix = Array.from(prefixChars).find((p) => trimmedText.startsWith(p));
+  if (usedPrefix) {
+    const args = trimmedText.slice(usedPrefix.length).trim().split(/\s+/);
     const cmd = args[0].toLowerCase();
     const subArg = args[1];
 
@@ -1574,7 +1619,7 @@ async function generateAIResponse(userText, senderName, cfg) {
   const systemPrompt =
     smartPersonaPrompt +
     `\n\n${lengthInstruction}\n` +
-    (cfg.geminiSystemPrompt ? `\nتوجيهات إضافية:\n${cfg.geminiSystemPrompt}\n` : "") +
+    (cfg.systemPrompt || cfg.geminiSystemPrompt ? `\nتوجيهات إضافية:\n${cfg.systemPrompt || cfg.geminiSystemPrompt}\n` : "") +
     (senderName ? `\nاسم المتحدث: ${senderName}` : "");
 
   // Candidate models in priority order:

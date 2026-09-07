@@ -39,7 +39,7 @@ export function isDisposableEmail(email: string) {
   return DISPOSABLE_DOMAINS.has(domain);
 }
 
-export function validateGoogleSignupEmail(
+export function validateSignupEmail(
   email: string
 ): { ok: true; email: string } | { ok: false; message: string } {
   const value = normalizeEmail(email);
@@ -49,10 +49,6 @@ export function validateGoogleSignupEmail(
 
   if (isDisposableEmail(value)) {
     return { ok: false, message: "لا يسمح باستخدام بريد مؤقت أو وهمي" };
-  }
-
-  if (!isGoogleEmail(value)) {
-    return { ok: false, message: "يُسمح فقط باستخدام بريد Google (Gmail)" };
   }
 
   return { ok: true, email: value };

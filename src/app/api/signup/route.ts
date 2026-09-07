@@ -3,7 +3,7 @@ import { createAdmin } from "@/lib/supabase/admin";
 import { genOtp, queueOtpSms, buildOtpMessage } from "@/lib/otp";
 import { normalizePhoneNumber, isValidWhatsAppPhone } from "@/lib/phone";
 import { logOtpEvent, logOtpError } from "@/lib/otp-logger";
-import { validateGoogleSignupEmail } from "@/lib/email";
+import { validateSignupEmail } from "@/lib/email";
 import { sendTelegramOtp } from "@/lib/telegram";
 import { sendUniversalOtp } from "@/lib/mailer";
 import { rateLimit, clientIp } from "@/lib/rate-limit";
@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
     if (String(password).length < 6)
       return NextResponse.json({ success: false, code: "WEAK_PASSWORD", message: "كلمة المرور 6 أحرف على الأقل" }, { status: 400 });
 
-    const emailCheck = validateGoogleSignupEmail(email);
+    const emailCheck = validateSignupEmail(email);
     if (!emailCheck.ok) {
       return NextResponse.json({ success: false, code: "INVALID_EMAIL", message: emailCheck.message }, { status: 400 });
     }

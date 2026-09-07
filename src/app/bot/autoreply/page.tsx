@@ -73,6 +73,7 @@ function AutoReplyCore({ embedded }: { embedded?: { number: string; secret: stri
   const [gateLoading, setGateLoading] = useState(false);
 
   const [systemActive, setSystemActive] = useState(true);
+  const [groupReplies, setGroupReplies] = useState(true);
   const [filter, setFilter] = useState<ReplyType | "all">("all");
   const [replies, setReplies] = useState<ReplyItem[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
@@ -98,12 +99,14 @@ function AutoReplyCore({ embedded }: { embedded?: { number: string; secret: stri
 
   const repliesRef = useRef(replies);
   const activeRef = useRef(systemActive);
+  const groupRef = useRef(groupReplies);
   const uid = useId();
   const uidSeq = useRef(0);
 
   useEffect(() => {
     repliesRef.current = replies;
     activeRef.current = systemActive;
+    groupRef.current = groupReplies;
   });
 
   useEffect(() => () => {
@@ -129,6 +132,7 @@ function AutoReplyCore({ embedded }: { embedded?: { number: string; secret: stri
       const bot = data.bot || {};
       setSession({ id: bot.id || "", name: bot.name || "", status: bot.status || "" });
       setSystemActive(data.autoReply !== false);
+      setGroupReplies(data.replyInGroups !== false);
       setReplies(Array.isArray(data.replies) ? data.replies : []);
     } catch {
       setGateError(t("تعذّر الوصول إلى الخادم. حاول مرة أخرى."));
@@ -156,11 +160,13 @@ function AutoReplyCore({ embedded }: { embedded?: { number: string; secret: stri
   }, [embedded?.number, embedded?.secret]);
 
   // تحديث تفاؤلي + حفظ سيرفراً (المحرك يلتقط التغيير خلال ثوانٍ)
-  const persist = async (nextReplies: ReplyItem[], nextActive: boolean) => {
+  const persist = async (nextReplies: ReplyItem[], nextActive: boolean, nextGroup: boolean = groupRef.current) => {
     const prevReplies = repliesRef.current;
     const prevActive = activeRef.current;
+    const prevGroup = groupRef.current;
     setReplies(nextReplies);
     setSystemActive(nextActive);
+    setGroupReplies(nextGroup);
     try {
       const digits = number.replace(/\D/g, "");
       const res = await fetch("/api/autoreply", {
@@ -172,6 +178,7 @@ function AutoReplyCore({ embedded }: { embedded?: { number: string; secret: stri
           action: "update",
           replies: nextReplies,
           autoReply: nextActive,
+          replyInGroups: nextGroup,
           lang: locale,
         }),
       });
@@ -186,12 +193,14 @@ function AutoReplyCore({ embedded }: { embedded?: { number: string; secret: stri
     } catch {
       setReplies(prevReplies);
       setSystemActive(prevActive);
+      setGroupReplies(prevGroup);
       setSyncError(t("تعذّر حفظ الرد على الخادم"));
       setTimeout(() => setSyncError(null), 3200);
     }
   };
 
   const toggleSystem = () => persist(repliesRef.current, !activeRef.current);
+  const toggleGroup = () => persist(repliesRef.current, activeRef.current, !groupRef.current);
 
   const openNew = () => {
     setKeyword("");
@@ -390,6 +399,17 @@ function AutoReplyCore({ embedded }: { embedded?: { number: string; secret: stri
             <span className={`h-2 w-2 rounded-full ${systemActive ? "bg-accent animate-ping" : "bg-danger"}`} />
             {systemActive ? t("نشط") : t("غير نشط")}
           </button>
+          <button
+            type="button"
+            onClick={toggleGroup}
+            className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold transition ${
+              groupReplies
+                ? "border-accent/30 bg-accent-soft text-accent"
+                : "border-muted/40 bg-transparent text-muted"
+            }`}
+          >
+            {groupReplies ? t("الرد في الجروبات: شغال") : t("الرد في الجروبات: متوقف")}
+          </button>
           <h1 className="mt-4 font-display text-2xl font-bold sm:text-3xl">{t("مدير الرد التلقائي")}</h1>
           {session?.name && <p className="mt-1 text-xs text-muted/70">{session.name}</p>}
           <p className="mt-1 text-sm text-muted">
@@ -415,6 +435,17 @@ function AutoReplyCore({ embedded }: { embedded?: { number: string; secret: stri
             >
               <span className={`h-2 w-2 rounded-full ${systemActive ? "bg-accent animate-ping" : "bg-danger"}`} />
               {systemActive ? t("الرد التلقائي: شغال") : t("الرد التلقائي: متوقف")}
+            </button>
+            <button
+              type="button"
+              onClick={toggleGroup}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold transition ${
+                groupReplies
+                  ? "border-accent/30 bg-accent-soft text-accent"
+                  : "border-muted/40 bg-transparent text-muted"
+              }`}
+            >
+              {groupReplies ? t("الرد في الجروبات: شغال") : t("الرد في الجروبات: متوقف")}
             </button>
             <span className="text-xs text-muted font-medium">
               {locale === "en"

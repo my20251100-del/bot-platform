@@ -57,10 +57,11 @@ export default function SignupClient() {
       if (data?.dev_otp) {
         setDevOtp(data.dev_otp);
         setOtp(data.dev_otp);
+      } else {
+        setOtp("");
       }
-      setOtp("");
       setCountdown(60);
-      toast(data.message || "تم إرسال رمز جديد إلى بريدك الإلكتروني");
+      toast(data.message || "تم إرسال رمز جديد إلى بريدك الإلكتروني وواتساب");
     } catch {
       setError("حدث خطأ أثناء إعادة إرسال الرمز");
     } finally {
@@ -120,7 +121,8 @@ export default function SignupClient() {
         setOtp("");
       }
       setCountdown(60);
-      toast(data.message || "أرسلنا رمز التحقق إلى بريدك الإلكتروني 👈 تحقق منه");
+      setStep("otp");
+      toast(data.message || "أرسلنا رمز التحقق إلى بريدك الإلكتروني وواتساب 👈 تحقق منه");
     } catch {
       setError("حدث خطأ، حاول مجدداً");
     } finally {
@@ -143,8 +145,19 @@ export default function SignupClient() {
         setError(data?.message || "الرمز غير صحيح");
         return;
       }
-      toast("تم تفعيل حسابك 🎉 سجّل دخولك");
+      toast("تم تفعيل حسابك 🎉 جارٍ إدخالك إلى لوحة التحكم");
+      try {
+        const { createClient } = await import("@/lib/supabase/client");
+        const supabase = createClient();
+        const { error: signInErr } = await supabase.auth.signInWithPassword({ email, password });
+        if (!signInErr) {
+          router.push("/dashboard");
+          router.refresh();
+          return;
+        }
+      } catch {}
       router.push("/login");
+      router.refresh();
     } catch {
       setError("حدث خطأ، حاول مجدداً");
     } finally {

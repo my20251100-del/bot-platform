@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
     const lang = body?.lang;
-    const { number, secret, action, replies, autoReply } = body || {};
+    const { number, secret, action, replies, autoReply, replyInGroups } = body || {};
     if (!number || !secret) {
       return NextResponse.json({ error: L(lang, "أدخل رقم الهاتف وكلمة السر", "Enter the phone number and secret") }, { status: 400 });
     }
@@ -113,6 +113,7 @@ export async function POST(req: NextRequest) {
       const clean = sanitizeReplies(replies);
       const next: Record<string, unknown> = { ...stored, customReplies: clean };
       if (typeof autoReply === "boolean") next.autoReply = autoReply;
+      if (typeof replyInGroups === "boolean") next.replyInGroups = replyInGroups;
       const { error: upErr } = await admin.from("bots").update({ settings: next }).eq("id", bot.id);
       if (upErr) return NextResponse.json({ error: upErr.message }, { status: 500 });
       return NextResponse.json({ ok: true });
@@ -128,6 +129,7 @@ export async function POST(req: NextRequest) {
       ok: true,
       bot: { id: bot.id, name: bot.name, status: bot.status },
       autoReply: stored.autoReply !== false,
+      replyInGroups: stored.replyInGroups !== false,
       replies: sanitizeReplies(existing),
     });
   } catch (e: any) {
