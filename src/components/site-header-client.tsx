@@ -153,7 +153,7 @@ export default function SiteHeaderClient({ user }: SiteHeaderClientProps) {
                 className="inline-flex items-center gap-1.5 rounded-xl border border-border/80 bg-surface/90 px-3 py-1.5 text-xs sm:text-sm font-semibold text-fg transition hover:border-accent hover:text-accent"
               >
                 <span>🔑</span>
-                <span className="hidden sm:inline">{t("🔑 تسجيل الدخول")}</span>
+                <span className="hidden sm:inline">{t("تسجيل الدخول")}</span>
                 <span className="sm:hidden">{t("دخول")}</span>
               </Link>
 
