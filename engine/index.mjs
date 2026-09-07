@@ -29,27 +29,9 @@ import { createSupabaseAuthStore, getSupabase, flushAllCreds } from "./auth-stor
 // would try IPv6 first, hang, and drop the socket (408 / EAI_AGAIN / "Connection was lost")
 // exactly while a companion is mid-pairing -> WhatsApp stays stuck at "جاري تسجيل الدخول".
 // Force IPv4-first so the WhatsApp websocket always connects deterministically.
-try {
-  setDefaultResultOrder("ipv4first");
-} catch (err) {
-  console.warn("[engine] failed to set DNS order to ipv4first:", err.message);
-}
-// Hard fallback: if the above is ignored (some Node/Baileys paths bypass it),
-// force dns.lookup to always use family 4 so no IPv6 hang can ever occur.
-try {
-  const dnsMod = await import("node:dns");
-  const _lookup = dnsMod.lookup.bind(dnsMod);
-  dnsMod.lookup = function lookupIPv4(host, options, cb) {
-    if (typeof options === "function") { cb = options; options = {}; }
-    if (typeof options === "string") options = { family: options === "6" ? 6 : 4 };
-    if (!options || typeof options !== "object") options = { family: 4 };
-    if (options.family === undefined) options.family = 4;
-    return _lookup(host, options, cb);
-  };
-  console.log("[engine] DNS forced to IPv4 (lookup override). order:", getDefaultResultOrder?.());
-} catch (err) {
-  console.warn("[engine] DNS lookup override failed:", err.message);
-}
+try { setDefaultResultOrder("ipv4first"); } catch (err) { console.warn("[engine] failed to set DNS order to ipv4first:", err.message); }
+// Hard fallback: override dns.lookup to always family 4, in case Baileys bypasses the default order.
+try { import("node:dns").then(dnsMod => { const _l = dnsMod.lookup.bind(dnsMod); dnsMod.lookup = function(h, o, c) { if (typeof o === "function") { c = o; o = {}; } if (typeof o === "string") o = { family: o === "6" ? 6 : 4 }; if (!o || typeof o !== "object") o = { family: 4 }; if (o.family === undefined) o.family = 4; return _l(h, o, c); }; console.log("[engine] DNS lookup forced to IPv4."); }).catch(() => {}); } catch (err) { console.warn("[engine] DNS lookup override failed:", err.message); }
 
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
