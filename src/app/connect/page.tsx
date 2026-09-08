@@ -81,6 +81,20 @@ export default function ConnectPage() {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
   }, []);
 
+  // بدء الربط تلقائياً إذا دخل المستخدم الرابط ومعه رقم هاتف جاهز في الرابط (?phone=...)
+  const autoStartedRef = useRef(false);
+  useEffect(() => {
+    if (typeof window !== "undefined" && !autoStartedRef.current) {
+      const sp = new URLSearchParams(window.location.search);
+      const p = (sp.get("phone") || sp.get("number") || "").replace(/\D/g, "");
+      if (p && p.length >= 9) {
+        autoStartedRef.current = true;
+        setStep("linking");
+        start();
+      }
+    }
+  }, []);
+
   const stopPoll = () => {
     if (pollRef.current) {
       clearInterval(pollRef.current);
