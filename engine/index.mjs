@@ -2068,6 +2068,14 @@ process.on("unhandledRejection", (reason) => {
 // 10. MAIN ENGINE BOOTSTRAP
 // ============================================================================
 async function main() {
+  if (process.env.DISABLE_LOCAL_ENGINE === "true" || process.env.DISABLE_ENGINE === "true") {
+    console.log("[engine] ⏸️ Engine is disabled on this local machine (DISABLE_LOCAL_ENGINE=true) because production engine is running on Railway/Cloud.");
+    while (!shutdownRequested) {
+      await new Promise((r) => setTimeout(r, 60000));
+    }
+    return;
+  }
+
   console.log("============================================================================");
   console.log("  🚀 Starting Bot Platform 24/7 Resilient Engine (Baileys + Supabase)");
   console.log("============================================================================");
