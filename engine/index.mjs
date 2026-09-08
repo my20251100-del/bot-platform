@@ -12,6 +12,7 @@ import {
   downloadContentFromMessage,
   jidNormalizedUser,
   normalizeMessageContent,
+  proto,
 } from "@whiskeysockets/baileys";
 import QRCode from "qrcode";
 import pino from "pino";
@@ -35,6 +36,22 @@ try { import("node:dns").then(dnsMod => { const _l = dnsMod.lookup.bind(dnsMod);
 
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// ============================================================================
+// CRITICAL: WhatsApp now rejects new-device pairing (QR & pair-code) when the
+// client advertises UserAgent.Platform.WEB (decodeFrame error -> 428 / "Connection
+// Terminated by Server"). Registered sessions (resume) are unaffected. Impersonate
+// MACOS platform instead, matching current WhatsApp Web behavior (Baileys PR #2365).
+// This runtime patch covers any deployment that installs baileys fresh.
+// ============================================================================
+try {
+  if (proto?.ClientPayload?.UserAgent?.Platform) {
+    proto.ClientPayload.UserAgent.Platform.WEB = proto.ClientPayload.UserAgent.Platform.MACOS;
+    console.log("[engine] Baileys platform patched: new-device pairing will use Platform.MACOS.");
+  }
+} catch (err) {
+  console.warn("[engine] platform patch failed:", err.message);
+}
 
 // ============================================================================
 // At-rest encryption (AES-256-GCM) for sensitive bot fields (secret, API keys).
@@ -835,7 +852,7 @@ async function handleConnectionClose(session, error) {
   }
 
   // 4.y A pair_code bot that failed to reconnect ≥2× has dead creds — force fresh pairing.
-  if (bot.link_method === "pair_code" && session.consecutiveFailures >= 2) {
+  if (session.bot.link_method === "pair_code" && session.consecutiveFailures >= 2) {
     console.log(`[WA][${botId}] pair_code bot failed ${session.consecutiveFailures}× — forcing fresh pairing...`);
     await session.destroy("pair_code_dead");
     activeSessions.delete(botId);
