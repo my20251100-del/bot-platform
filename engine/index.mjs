@@ -502,7 +502,7 @@ async function startBotSession(bot, waVersion, opts = {}) {
       printQRInTerminal: false,
       markOnlineOnConnect: true,
       qrTimeout: 180000,
-      browser: Browsers.ubuntu("Chrome"),
+      browser: Browsers.macOS("Safari"),
       syncFullHistory: false,
       defaultQueryTimeoutMs: 120000,
       connectTimeoutMs: 120000,
