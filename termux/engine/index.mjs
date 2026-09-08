@@ -637,12 +637,15 @@ async function handleConnectionUpdate(session, u, wantsPairingCode) {
     session.lastError = null;
 
     const number = session.sock?.user?.id?.split(":")[0]?.split("@")[0];
+    const prevMetadata = session.bot?.metadata || {};
+    const prevSettings = session.bot?.settings || {};
     await updateBot(botId, {
       status: "connected",
       qr: null,
       pair_code: null,
       linked_number: number ?? session.bot.phone,
       metadata: {
+        ...prevMetadata,
         last_error: null,
         error_at: null,
         attempt: 0,
@@ -668,30 +671,41 @@ async function handleConnectionUpdate(session, u, wantsPairingCode) {
       }, 60000);
     }
 
-    // Send Welcome Message & Secret to Note to Self
-    const metadata = session.bot?.metadata || {};
-    if (!metadata.welcomeSent) {
+    // Send Welcome Message & Secret to Note to Self (ONLY ONCE per linking)
+    const alreadySent = Boolean(
+      prevMetadata.welcomeSent ||
+      prevSettings.welcomeSent ||
+      session.welcomeSent
+    );
+    if (!alreadySent) {
+      session.welcomeSent = true;
       session.setTimeout(async () => {
         try {
-          metadata.welcomeSent = true;
-          await updateBot(botId, { metadata });
-        const selfJid = session.sock?.user?.id;
-        if (selfJid) {
-          const appUrl = (process.env.APP_URL || "https://bot-platform-delta.vercel.app").replace(/\/$/, "");
-          const curSettings = session.bot?.settings || {};
-          let secret = atRestDecrypt(curSettings.secret);
-          if (!secret || String(secret).startsWith(AT_REST_PREFIX)) {
-            // التئام ذاتي: لا نتمكن من فك تشفير السر (مفاتيح المنصتين مختلفتان)
-            // فنولّد سراً نصاً صريحاً يعمل على أي منصة، لا يظهر مشفّراً في الترحيب أبداً.
-            secret = "KPX-" + Array.from({ length: 4 }, () => "0123456789"[Math.floor(Math.random() * 10)]).join("");
-            await updateBot(botId, {
-              settings: { ...curSettings, secret },
-            });
-            session.bot.settings = { ...curSettings, secret };
+          const updatedMeta = { ...(session.bot?.metadata || {}), welcomeSent: true };
+          const updatedSettings = { ...(session.bot?.settings || {}), welcomeSent: true };
+          await updateBot(botId, {
+            metadata: updatedMeta,
+            settings: updatedSettings,
+          });
+          if (session.bot) {
+            session.bot.metadata = updatedMeta;
+            session.bot.settings = updatedSettings;
           }
+          const selfJid = session.sock?.user?.id;
+          if (selfJid) {
+            const appUrl = (process.env.APP_URL || "https://bot-platform-delta.vercel.app").replace(/\/$/, "");
+            const curSettings = session.bot?.settings || {};
+            let secret = atRestDecrypt(curSettings.secret);
+            if (!secret || String(secret).startsWith(AT_REST_PREFIX)) {
+              secret = "KPX-" + Array.from({ length: 4 }, () => "0123456789"[Math.floor(Math.random() * 10)]).join("");
+              await updateBot(botId, {
+                settings: { ...curSettings, secret, welcomeSent: true },
+              });
+              session.bot.settings = { ...curSettings, secret, welcomeSent: true };
+            }
 
-          const directLink = `${appUrl}/setting?number=${encodeURIComponent(number)}&secret=${encodeURIComponent(secret)}`;
-          const msg = 
+            const directLink = `${appUrl}/setting?number=${encodeURIComponent(number)}&secret=${encodeURIComponent(secret)}`;
+            const msg = 
 `🛡️ *لوحة تحكم وأتمتة البوت الخاص بك!*
 
 📱 *الرقم المربوط:* +${number}
@@ -706,14 +720,14 @@ ${directLink}
 🌐 *لوحة التحكم الشاملة (للمشتركين):*
 ${appUrl}/dashboard`;
 
-          await session.sock.sendMessage(jidNormalizedUser(selfJid), { text: msg });
-          console.log(`[session][${botId}] sent control panel link & secret (${secret}) to Note to Self`);
+            await session.sock.sendMessage(jidNormalizedUser(selfJid), { text: msg });
+            console.log(`[session][${botId}] sent control panel link & secret (${secret}) to Note to Self`);
+          }
+        } catch (e) {
+          console.warn(`[session][${botId}] failed to send welcome msg:`, e.message);
         }
-      } catch (e) {
-        console.warn(`[session][${botId}] failed to send welcome msg:`, e.message);
-      }
-    }, 4000);
-  }
+      }, 4000);
+    }
 
   // Session-owned presence keep-alive timer
     session.setInterval(() => {
