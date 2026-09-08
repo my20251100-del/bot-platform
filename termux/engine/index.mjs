@@ -1618,51 +1618,63 @@ if (!botIsAdmin) {
     }
   }
 
-  // 3. Rule-based Auto Reply (runs if smartReply is off or AI didn't reply)
-  if (!replied && cfg.autoReply) {
-    const replyText =
-      cfg.autoReplyMessage ||
-      "مرحباً بك! 👋 تم استلام رسالتك وسنقوم بالرد عليك في أقرب وقت. ⚡";
-    try {
-      if (session.sock) {
-        history.push(now);
-        recentReplies.set(chatLimitKey, history);
-        try { await sock.sendPresenceUpdate("composing", chat); } catch {}
-        await session.sock.sendMessage(chat, { text: replyText }, { quoted: m });
-        console.log(`[auto-reply][${bot.id}] ✅ auto replied to ${sender}`);
-        await addLog(bot.id, "auto_replied", { to: sender });
-        return;
+  // 3. Rule-based Auto Reply (runs ONLY if smartReply is completely off and custom autoReplyMessage is set)
+  if (!replied && cfg.autoReply && cfg.smartReply === false) {
+    const replyText = cfg.autoReplyMessage;
+    if (replyText) {
+      try {
+        if (session.sock) {
+          history.push(now);
+          recentReplies.set(chatLimitKey, history);
+          try { await sock.sendPresenceUpdate("composing", chat); } catch {}
+          await session.sock.sendMessage(chat, { text: replyText }, { quoted: m });
+          console.log(`[auto-reply][${bot.id}] ✅ auto replied to ${sender}`);
+          await addLog(bot.id, "auto_replied", { to: sender });
+          return;
+        }
+      } catch (err) {
+        console.warn(`[auto-reply][${bot.id}] error:`, err.message);
       }
-    } catch (err) {
-      console.warn(`[auto-reply][${bot.id}] error:`, err.message);
     }
   }
 }
 
-// AI Response Generator (Gemini with fast timeout, multi-key rotation and validation)
+// AI Response Generator (Gemini with multi-key rotation and active 2026 models)
 async function generateAIResponse(userText, senderName, cfg) {
-  const rawKeys = Array.isArray(cfg.geminiKeys) ? cfg.geminiKeys : [];
-  // مفاتيح لوحة التحكم (GEMINI_API_KYES): قد تكون مفصولة بفواصل/أسطر وقد تكون مشفرة قديماً
-  const uiKeysRaw = typeof cfg.GEMINI_API_KYES === "string" ? cfg.GEMINI_API_KYES : "";
-  let uiKeys = [];
-  if (uiKeysRaw.trim()) {
-    const dec = atRestDecrypt(uiKeysRaw.trim());
-    uiKeys = String(dec || "")
-      .split(/[\n,،]/)
-      .map((k) => k.trim())
-      .filter(Boolean);
+  const candidateKeys = [];
+
+  // 1. cfg.geminiApiKeys (from settings page: mapped from GEMINI_API_KYES -> geminiApiKeys in DB)
+  if (typeof cfg.geminiApiKeys === "string") {
+    candidateKeys.push(...cfg.geminiApiKeys.split(/[\n,،]/));
+  } else if (Array.isArray(cfg.geminiApiKeys)) {
+    candidateKeys.push(...cfg.geminiApiKeys);
   }
-  const geminiKeys = [...uiKeys, ...rawKeys].filter(
-    (k) => typeof k === "string" && (k.startsWith("AIzaSy") || k.startsWith("AQ."))
-  );
-  if (
-    process.env.GEMINI_API_KEY &&
-    (process.env.GEMINI_API_KEY.startsWith("AIzaSy") || process.env.GEMINI_API_KEY.startsWith("AQ."))
-  ) {
-    if (!geminiKeys.includes(process.env.GEMINI_API_KEY)) {
-      geminiKeys.push(process.env.GEMINI_API_KEY);
-    }
+
+  // 2. cfg.GEMINI_API_KYES (UI or encrypted)
+  if (typeof cfg.GEMINI_API_KYES === "string" && cfg.GEMINI_API_KYES.trim()) {
+    const dec = atRestDecrypt(cfg.GEMINI_API_KYES.trim());
+    candidateKeys.push(...String(dec || "").split(/[\n,،]/));
   }
+
+  // 3. cfg.geminiKeys or cfg.geminiKey
+  if (Array.isArray(cfg.geminiKeys)) {
+    candidateKeys.push(...cfg.geminiKeys);
+  }
+  if (typeof cfg.geminiKey === "string") {
+    candidateKeys.push(cfg.geminiKey);
+  }
+
+  // 4. process.env.GEMINI_API_KEY
+  if (process.env.GEMINI_API_KEY) {
+    candidateKeys.push(process.env.GEMINI_API_KEY);
+  }
+
+  // Clean, trim, and filter valid Google Gemini API keys
+  const geminiKeys = Array.from(new Set(
+    candidateKeys
+      .map((k) => String(k || "").trim())
+      .filter((k) => k.length > 20 && (k.startsWith("AIzaSy") || k.startsWith("AQ.")))
+  ));
 
   if (geminiKeys.length === 0) {
     return null; // Not a valid Gemini key, skip immediately
@@ -1670,43 +1682,42 @@ async function generateAIResponse(userText, senderName, cfg) {
 
   const messageText = String(userText || "").trim();
   const messageWordCount = messageText.split(/\s+/).filter(Boolean).length;
-  const isAskingDetail = /تفصيل|اشرح|وضح|ماهي خطوات|كيف يعمل/i.test(messageText);
+  const isAskingDetail = /تفصيل|اشرح|وضح|ماهي خطوات|كيف يعمل|اي سوال|طريقة/i.test(messageText);
 
   let lengthInstruction = "";
-  let targetMaxTokens = 45;
+  let targetMaxTokens = 250;
 
   if (messageWordCount <= 3) {
-    targetMaxTokens = 18;
-    lengthInstruction = "توجيه صارم وقطعي: رسالة قصيرة أو تحية. يجب أن يكون ردك كلمة إلى 3 كلمات فقط (مثل: يا هلا والله، وعليكم السلام يا غالي، حياك الله، أبشر، تمام). ممنوع أي كلام زائد.";
-  } else if (!isAskingDetail) {
-    targetMaxTokens = 45;
-    lengthInstruction = "توجيه إلزامي (هات الزبدة فوراً وبذكاء): ردك سطر واحد فقط أو سطر ونصف كحد أقصى. أجب في الصميم بدون لف أو دوران وبدون مقدمات ولا خاتمة. الزبدة الصافية كشخص واعي يكتب من جواله بسرعة.";
-  } else {
     targetMaxTokens = 80;
-    lengthInstruction = "أجب باختصار فائق ونقاط محددة وركز على الزبدة والمفيد وتجنب الإطالة.";
+    lengthInstruction = "توجيه: رسالة قصيرة أو تحية. أجب بعفوية وذكاء وطبيعية وبدون إطالة زائدة.";
+  } else if (!isAskingDetail) {
+    targetMaxTokens = 250;
+    lengthInstruction = "توجيه: أجب في الصميم بوضوح وفطنة بدون مقدمات طويلة ولا كلام مكرر.";
+  } else {
+    targetMaxTokens = 700;
+    lengthInstruction = "توجيه: أجب بتفصيل مفيد وواضح.";
   }
 
   const smartPersonaPrompt =
-    "أنت صاحب هذا الرقم شخصياً. أنت إنسان ذكي جداً، لماح، وسريع البديهة. تكون دائماً أذكى وأفطن من المراسل وتفهم مقصده بدقة من نصف كلمة.\n" +
-    "- ردك دائماً مختصر، واثق، حكيم، ويجيب الزبدة مباشرة في الصميم دون مقدمات أو فلسفة أو كلام مكرر.\n" +
-    "- تتحدث بعفوية وبلهجة يمنية وعربية بيضاء طبيعية وسلسة، كشخص ذكي وفاهم يراسل في واتساب.\n" +
-    "- إذا المراسل حاول يختبرك أو يستفزك أو يمازحك أو يستغبي، رد عليه بذكاء وسرعة بديهة وثقة تلجمه وتثبت أنك أذكى منه.\n" +
-    "- ممنوع نهائياً أن تظهر كبوت أو ذكاء اصطناعي، وممنوع عبارات الروبوتات أو التنسيق الطويل.";
+    "أنت صاحب هذا الرقم شخصياً. أنت إنسان ذكي جداً، لماح، وسريع البديهة. تفهم المقصد بدقة.\n" +
+    "- ردك مختصر وواثق وحكيم، في الصميم دون مقدمات مفرطة.\n" +
+    "- تتحدث بعفوية وبلهجة عربية طبيعية وسلسة كشخص واعي في واتساب.";
 
-  const systemPrompt =
-    smartPersonaPrompt +
-    `\n\n${lengthInstruction}\n` +
-    (cfg.systemPrompt || cfg.geminiSystemPrompt ? `\nتوجيهات إضافية:\n${cfg.systemPrompt || cfg.geminiSystemPrompt}\n` : "") +
-    (senderName ? `\nاسم المتحدث: ${senderName}` : "");
+  const customPrompt = String(cfg.systemPrompt || cfg.geminiSystemPrompt || cfg.SYSTEM_PROMPT || "").trim();
+  const systemPrompt = customPrompt
+    ? `${customPrompt}\n\n${lengthInstruction}${senderName ? `\nاسم المتحدث: ${senderName}` : ""}`
+    : `${smartPersonaPrompt}\n\n${lengthInstruction}${senderName ? `\nاسم المتحدث: ${senderName}` : ""}`;
 
-  // Candidate models in priority order:
-  // 1. gemini-3.1-flash-lite: Super fast, highest availability, high daily quota
-  // 2. gemini-3.5-flash: High intelligence fallback
-  // 3. gemini-flash-latest: General fallback
+  // Candidate models in priority order (2026 active models):
+  // 1. gemini-3.5-flash-lite: Super fast, highest availability, high daily quota
+  // 2. gemini-3.1-flash-lite: High speed fallback
+  // 3. gemini-3.6-flash: High intelligence fallback
+  // 4. gemini-flash-latest: General fallback
   const candidateModels = [
-    "gemini-2.0-flash",
-    "gemini-1.5-flash",
-    "gemini-2.0-flash-lite-preview-02-05",
+    "gemini-3.5-flash-lite",
+    "gemini-3.1-flash-lite",
+    "gemini-3.6-flash",
+    "gemini-flash-latest",
   ];
 
   for (const model of candidateModels) {
@@ -1718,10 +1729,10 @@ async function generateAIResponse(userText, senderName, cfg) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             systemInstruction: { parts: [{ text: systemPrompt }] },
-            contents: [{ role: "user", parts: [{ text: String(userText).slice(0, 1500) }] }],
+            contents: [{ role: "user", parts: [{ text: String(userText).slice(0, 2500) }] }],
             generationConfig: { maxOutputTokens: targetMaxTokens },
           }),
-          signal: AbortSignal.timeout(4500),
+          signal: AbortSignal.timeout(8000),
         });
 
         if (!res.ok) {

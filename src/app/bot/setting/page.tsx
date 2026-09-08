@@ -1151,6 +1151,7 @@ function normalizeSettingsForDb(s: Record<string, any>): Record<string, any> {
     OWNER_AGE: "ownerAge",
     OWNER_IMG: "ownerImg",
     CHANNEL_VOICE: "channelVoice",
+    AUTO_REPLY: "autoReply",
   };
   for (const [from, to] of Object.entries(map)) {
     if (s[from] !== undefined) out[to] = s[from];
