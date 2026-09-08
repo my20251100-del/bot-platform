@@ -548,29 +548,10 @@ async function startBotSession(bot, waVersion, opts = {}) {
           },
         });
       } else {
-        session.setTimeout(async () => {
-          if (session.destroying || session.state === SessionState.CONNECTED || session.pairingRequested) return;
-          session.pairingRequested = true;
-          // Retry a few times in case the socket hiccups right at request time —
-          // a single failed attempt must NOT leave the user stuck without a code.
-          for (let attempt = 1; attempt <= 3; attempt++) {
-            if (session.destroying || !session.sock) return;
-            try {
-              console.log(`[WA][${bot.id}] requesting pairing code for +${digits} (attempt ${attempt})...`);
-              const code = await sock.requestPairingCode(digits);
-              if (!code) throw new Error("empty pairing code");
-              session.pairingCode = code;
-              await updateBot(bot.id, { pair_code: code, qr: null, status: "pending" });
-              console.log(`[WA][${bot.id}] ✅ Pairing code generated: ${code}`);
-              break;
-            } catch (err) {
-              console.error(`[WA][${bot.id}] pairing code request failed (attempt ${attempt}/3):`, err.message);
-              if (attempt < 3) {
-                await new Promise((r) => setTimeout(r, 3000));
-              }
-            }
-          }
-        }, 3500);
+        // طلب كود الاقتران يحدث في handleConnectionUpdate فور وصول أول QR من
+        // بايلز (نفس التدفق الرسمي example.ts). بهذا لا يتعارض تدفق QR مع تدفق
+        // pair-code على نفس السوكيت، فلا يقتل الخادم الجلسة (decodeFrame 428).
+        session.pairingPhone = digits;
       }
     }
 
@@ -615,8 +596,32 @@ async function handleConnectionUpdate(session, u, wantsPairingCode) {
     `[WA][${botId}] connection.update: connection=${u.connection}, qr=${!!u.qr}, code=${u.lastDisconnect?.error?.output?.statusCode}`
   );
 
-  // QR Code handling
-  if (u.qr && !wantsPairingCode) {
+  // Pairing-code / QR handling
+  if (u.qr && wantsPairingCode) {
+    // مثل example.ts الرسمي: اطلب كود الاقتران عند وصول أول QR — السوكيت يكون
+    // جاهزاً بالكامل لاستقبال تدفق الاقتران، فيثبت الكود دون قتل من الخادم.
+    if (!session.pairingRequested) {
+      session.pairingRequested = true;
+      const digits =
+        session.pairingPhone ||
+        String(session.bot?.phone || session.bot?.linked_number || "").replace(/\D/g, "").replace(/^0+/, "");
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        if (session.destroying || !session.sock) return;
+        try {
+          console.log(`[WA][${botId}] requesting pairing code for +${digits} (attempt ${attempt})...`);
+          const code = await session.sock.requestPairingCode(digits);
+          if (!code) throw new Error("empty pairing code");
+          session.pairingCode = code;
+          await updateBot(botId, { pair_code: code, qr: null, status: "pending" });
+          console.log(`[WA][${botId}] ✅ Pairing code generated: ${code}`);
+          break;
+        } catch (err) {
+          console.error(`[WA][${botId}] pairing code request failed (attempt ${attempt}/3):`, err.message);
+          if (attempt < 3) await new Promise((r) => setTimeout(r, 3000));
+        }
+      }
+    }
+  } else if (u.qr) {
     session.state = SessionState.QR_READY;
     try {
       const dataUrl = await QRCode.toDataURL(u.qr, { width: 320 });

@@ -1,5 +1,4 @@
-process.exit(0); // DISABLED LOCALLY
-process.exit(0); // DISABLED LOCALLY
+
 // ============================================================================
 // Bot Platform — 24/7 Resilient Production WhatsApp Engine
 // Red Queen Architecture Standard | Fully Isolated Sessions | Auto-Recovery
@@ -13,18 +12,108 @@ import {
   downloadContentFromMessage,
   jidNormalizedUser,
   normalizeMessageContent,
+  proto,
 } from "@whiskeysockets/baileys";
 import QRCode from "qrcode";
 import pino from "pino";
+import { createHash, createCipheriv, createDecipheriv, randomBytes } from "crypto";
 import { promisify } from "util";
 import { rmSync, writeFileSync, readFileSync, existsSync } from "fs";
 import { execFile } from "child_process";
 import path from "path";
 import { fileURLToPath } from "url";
+import { setDefaultResultOrder, getDefaultResultOrder } from "node:dns";
 import { createSupabaseAuthStore, getSupabase, flushAllCreds } from "./auth-store.mjs";
+
+// CRITICAL: This host has NO IPv6 route, but web.whatsapp.com DNS often returns an
+// IPv6 (AAAA) address first. Node ≥18 uses "verbatim" ordering by default, so Baileys
+// would try IPv6 first, hang, and drop the socket (408 / EAI_AGAIN / "Connection was lost")
+// exactly while a companion is mid-pairing -> WhatsApp stays stuck at "جاري تسجيل الدخول".
+// Force IPv4-first so the WhatsApp websocket always connects deterministically.
+try { setDefaultResultOrder("ipv4first"); } catch (err) { console.warn("[engine] failed to set DNS order to ipv4first:", err.message); }
+// Hard fallback: override dns.lookup to always family 4, in case Baileys bypasses the default order.
+try { import("node:dns").then(dnsMod => { const _l = dnsMod.lookup.bind(dnsMod); dnsMod.lookup = function(h, o, c) { if (typeof o === "function") { c = o; o = {}; } if (typeof o === "string") o = { family: o === "6" ? 6 : 4 }; if (!o || typeof o !== "object") o = { family: 4 }; if (o.family === undefined) o.family = 4; return _l(h, o, c); }; console.log("[engine] DNS lookup forced to IPv4."); }).catch(() => {}); } catch (err) { console.warn("[engine] DNS lookup override failed:", err.message); }
 
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// ============================================================================
+// CRITICAL: WhatsApp now rejects new-device pairing (QR & pair-code) when the
+// client advertises UserAgent.Platform.WEB (decodeFrame error -> 428 / "Connection
+// Terminated by Server"). Registered sessions (resume) are unaffected. Impersonate
+// MACOS platform instead, matching current WhatsApp Web behavior (Baileys PR #2365).
+// This runtime patch covers any deployment that installs baileys fresh.
+// ============================================================================
+try {
+  if (proto?.ClientPayload?.UserAgent?.Platform) {
+    proto.ClientPayload.UserAgent.Platform.WEB = proto.ClientPayload.UserAgent.Platform.MACOS;
+    console.log("[engine] Baileys platform patched: new-device pairing will use Platform.MACOS.");
+  }
+} catch (err) {
+  console.warn("[engine] platform patch failed:", err.message);
+}
+
+// ============================================================================
+// At-rest encryption (AES-256-GCM) for sensitive bot fields (secret, API keys).
+// Key is derived from the server-only secret, so no plaintext secrets are stored.
+// Falls back gracefully (no-op) if the key material is unavailable — never crashes.
+// ============================================================================
+const AT_REST_PREFIX = "enc:v1:";
+
+function atRestKeyFrom(seed) {
+  return createHash("sha256")
+    .update(`hatemx-bot-at-rest-v1:${seed}`)
+    .digest();
+}
+
+function atRestCandidateKeys() {
+  const seeds = [
+    process.env.APP_ENCRYPTION_KEY,
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    process.env.SUPABASE_SERVICE_KEY,
+    process.env.SUPABASE_KEY,
+    "",
+  ];
+  const seen = new Set();
+  const keys = [];
+  for (const seed of seeds) {
+    const key = atRestKeyFrom(String(seed || ""));
+    if (!seen.has(key.toString("hex"))) {
+      seen.add(key.toString("hex"));
+      keys.push(key);
+    }
+  }
+  return keys;
+}
+
+function atRestEncrypt(plain) {
+  if (!plain) return "";
+  try {
+    const key = atRestCandidateKeys()[0];
+    const iv = randomBytes(12);
+    const cipher = createCipheriv("aes-256-gcm", key, iv);
+    const data = Buffer.concat([cipher.update(String(plain), "utf8"), cipher.final()]);
+    const tag = cipher.getAuthTag();
+    return AT_REST_PREFIX + Buffer.concat([iv, tag, data]).toString("base64");
+  } catch (e) {
+    return String(plain);
+  }
+}
+
+function atRestDecrypt(value) {
+  if (typeof value !== "string" || !value.startsWith(AT_REST_PREFIX)) return value;
+  for (const key of atRestCandidateKeys()) {
+    try {
+      const raw = Buffer.from(value.slice(AT_REST_PREFIX.length), "base64");
+      const decipher = createDecipheriv("aes-256-gcm", key, raw.subarray(0, 12));
+      decipher.setAuthTag(raw.subarray(12, 28));
+      return Buffer.concat([decipher.update(raw.subarray(28)), decipher.final()]).toString("utf8");
+    } catch (e) {
+      // مفتاح غير مطابق — نجرب التالي
+    }
+  }
+  return value;
+}
 
 let sharp = null;
 try {
@@ -89,6 +178,7 @@ class BoundedCache {
 const messageCache = new BoundedCache(5000, 1000 * 60 * 60 * 24); // 24 hours TTL
 const seenStatuses = new BoundedCache(2000, 86400000); // 24 hours TTL
 const recentReplies = new BoundedCache(1000, 60000); // 1 minute per chat
+const recentTexts = new BoundedCache(3000, 3600000); // نص الرسائل الأخيرة (لمضاد التعديل)
 const chatMemory = new BoundedCache(500, 7200000); // 2 hours AI memory
 const lidMap = new Map(); // Global LID cache
 
@@ -329,6 +419,10 @@ class BotSession {
     this.destroying = true;
     this.state = SessionState.STOPPED;
     this.clearTimers();
+    if (this.onlinePulse) {
+      clearInterval(this.onlinePulse);
+      this.onlinePulse = null;
+    }
 
     if (this.flushCreds && reason !== "logged_out") {
       try {
@@ -431,23 +525,34 @@ async function startBotSession(bot, waVersion, opts = {}) {
       digits = "20" + digits;
     }
     const wantsPairingCode = bot.link_method === "pair_code" && digits.length >= 10;
-    const isAlreadyRegistered = Boolean(state?.creds?.registered);
+    const isDeadSession = String(bot.metadata?.last_error || "").includes("code 428");
+    const isAlreadyRegistered = Boolean(state?.creds?.registered) && !isDeadSession;
     const is515Restart = Boolean(opts?.is515Restart);
 
     if (wantsPairingCode && !isAlreadyRegistered && !is515Restart && bot.status !== "connected") {
       session.state = SessionState.PAIRING;
-      session.setTimeout(async () => {
-        if (session.destroying || session.state === SessionState.CONNECTED || session.pairingRequested) return;
-        session.pairingRequested = true;
-        try {
-          console.log(`[WA][${bot.id}] requesting pairing code for +${digits}...`);
-          const code = await sock.requestPairingCode(digits);
-          await updateBot(bot.id, { pair_code: code, qr: null, status: "pending" });
-          console.log(`[WA][${bot.id}] ✅ Pairing code generated: ${code}`);
-        } catch (err) {
-          console.error(`[WA][${bot.id}] pairing code request failed:`, err.message);
-        }
-      }, 3500);
+
+      // Guard: refuse invalid/placeholder numbers (all zeros, "123", etc.) so the engine
+      // doesn't waste a WhatsApp socket generating codes that can never pair.
+      const looksInvalid = /^0+$/.test(digits) || /^123+$/.test(digits) || digits.length < 10;
+      if (looksInvalid) {
+        console.warn(`[WA][${bot.id}] invalid phone for pairing: +${digits}. Stopping to avoid wasting sockets.`);
+        await updateBot(bot.id, {
+          command: "stop",
+          status: "disconnected",
+          pair_code: null,
+          qr: null,
+          metadata: {
+            last_error: "رقم الواتساب غير صالح (placeholder) — يرجى الربط بالرقم الحقيقي",
+            error_at: new Date().toISOString(),
+          },
+        });
+      } else {
+        // طلب كود الاقتران يحدث في handleConnectionUpdate فور وصول أول QR من
+        // بايلز (نفس التدفق الرسمي example.ts). بهذا لا يتعارض تدفق QR مع تدفق
+        // pair-code على نفس السوكيت، فلا يقتل الخادم الجلسة (decodeFrame 428).
+        session.pairingPhone = digits;
+      }
     }
 
     // Attach Event Handlers
@@ -491,8 +596,32 @@ async function handleConnectionUpdate(session, u, wantsPairingCode) {
     `[WA][${botId}] connection.update: connection=${u.connection}, qr=${!!u.qr}, code=${u.lastDisconnect?.error?.output?.statusCode}`
   );
 
-  // QR Code handling
-  if (u.qr && !wantsPairingCode) {
+  // Pairing-code / QR handling
+  if (u.qr && wantsPairingCode) {
+    // مثل example.ts الرسمي: اطلب كود الاقتران عند وصول أول QR — السوكيت يكون
+    // جاهزاً بالكامل لاستقبال تدفق الاقتران، فيثبت الكود دون قتل من الخادم.
+    if (!session.pairingRequested) {
+      session.pairingRequested = true;
+      const digits =
+        session.pairingPhone ||
+        String(session.bot?.phone || session.bot?.linked_number || "").replace(/\D/g, "").replace(/^0+/, "");
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        if (session.destroying || !session.sock) return;
+        try {
+          console.log(`[WA][${botId}] requesting pairing code for +${digits} (attempt ${attempt})...`);
+          const code = await session.sock.requestPairingCode(digits);
+          if (!code) throw new Error("empty pairing code");
+          session.pairingCode = code;
+          await updateBot(botId, { pair_code: code, qr: null, status: "pending" });
+          console.log(`[WA][${botId}] ✅ Pairing code generated: ${code}`);
+          break;
+        } catch (err) {
+          console.error(`[WA][${botId}] pairing code request failed (attempt ${attempt}/3):`, err.message);
+          if (attempt < 3) await new Promise((r) => setTimeout(r, 3000));
+        }
+      }
+    }
+  } else if (u.qr) {
     session.state = SessionState.QR_READY;
     try {
       const dataUrl = await QRCode.toDataURL(u.qr, { width: 320 });
@@ -524,6 +653,21 @@ async function handleConnectionUpdate(session, u, wantsPairingCode) {
     await addLog(botId, "connected", { number });
     console.log(`[WA][${botId}] ✅ Connected successfully as +${number}`);
 
+    // وضع الإظهار: متصلاً دائماً (showOnline) أو غير مرئي
+    const presenceMode = session.bot?.settings?.showOnline === false ? "unavailable" : "online";
+    session.setTimeout(async () => {
+      try {
+        await sock.sendPresenceUpdate(presenceMode);
+      } catch {}
+    }, 2500);
+    if (presenceMode === "online" && !session.onlinePulse) {
+      session.onlinePulse = setInterval(() => {
+        try {
+          session.sock?.sendPresenceUpdate("online").catch(() => {});
+        } catch {}
+      }, 60000);
+    }
+
     // Send Welcome Message & Secret to Note to Self
     const metadata = session.bot?.metadata || {};
     if (!metadata.welcomeSent) {
@@ -535,8 +679,10 @@ async function handleConnectionUpdate(session, u, wantsPairingCode) {
         if (selfJid) {
           const appUrl = (process.env.APP_URL || "https://bot-platform-delta.vercel.app").replace(/\/$/, "");
           const curSettings = session.bot?.settings || {};
-          let secret = curSettings.secret;
-          if (!secret) {
+          let secret = atRestDecrypt(curSettings.secret);
+          if (!secret || String(secret).startsWith(AT_REST_PREFIX)) {
+            // التئام ذاتي: لا نتمكن من فك تشفير السر (مفاتيح المنصتين مختلفتان)
+            // فنولّد سراً نصاً صريحاً يعمل على أي منصة، لا يظهر مشفّراً في الترحيب أبداً.
             secret = "KPX-" + Array.from({ length: 4 }, () => "0123456789"[Math.floor(Math.random() * 10)]).join("");
             await updateBot(botId, {
               settings: { ...curSettings, secret },
@@ -685,6 +831,55 @@ async function handleConnectionClose(session, error) {
     return;
   }
 
+  // 4.x Code 428 on a linked/registered bot — WhatsApp terminated the session.
+  // Force a fresh pairing code instead of retrying with dead credentials.
+  if (code === 428 && isRegistered) {
+    console.log(`[WA][${botId}] code 428 on linked bot — forcing fresh pairing...`);
+    await session.destroy("428_force_pairing");
+    activeSessions.delete(botId);
+    if (typeof session.clearStore === "function") {
+      try { await session.clearStore(); } catch {}
+    } else {
+      try { await supabase.from("bot_auth").delete().eq("bot_id", botId); } catch {}
+      try { await supabase.from("bot_keys").delete().eq("bot_id", botId); } catch {}
+    }
+    await updateBot(botId, {
+      status: "pending",
+      command: "start",
+      pair_code: null,
+      qr: null,
+      linked_number: null,
+      metadata: { last_error: "code 428 — تم إعادة تعيين الجلسة، يُرجى الاقتران مجددًا", error_at: new Date().toISOString(), attempt: 0 },
+    });
+    await addLog(botId, "428_force_pairing", { code });
+    startBotSession(session.bot, session.waVersion);
+    return;
+  }
+
+  // 4.y A pair_code bot that failed to reconnect ≥2× has dead creds — force fresh pairing.
+  if (session.bot.link_method === "pair_code" && session.consecutiveFailures >= 2) {
+    console.log(`[WA][${botId}] pair_code bot failed ${session.consecutiveFailures}× — forcing fresh pairing...`);
+    await session.destroy("pair_code_dead");
+    activeSessions.delete(botId);
+    if (typeof session.clearStore === "function") {
+      try { await session.clearStore(); } catch {}
+    } else {
+      try { await supabase.from("bot_auth").delete().eq("bot_id", botId); } catch {}
+      try { await supabase.from("bot_keys").delete().eq("bot_id", botId); } catch {}
+    }
+    await updateBot(botId, {
+      status: "pending",
+      command: "start",
+      pair_code: null,
+      qr: null,
+      linked_number: null,
+      metadata: { last_error: "code 428 — pair_code_dead — يُرجى الاقتران مجددًا", error_at: new Date().toISOString(), attempt: 0 },
+    });
+    await addLog(botId, "pair_code_dead_force_pairing", { failures: session.consecutiveFailures });
+    startBotSession(session.bot, session.waVersion);
+    return;
+  }
+
   // 4. Transient / Network Drops / 408 / 428 on Linked Bots
   session.consecutiveFailures++;
   const backoffMs = getBackoffDelay(session.consecutiveFailures, isRegistered);
@@ -734,6 +929,22 @@ async function handleSessionFailure(session, err) {
 // ============================================================================
 // 7. INCOMING MESSAGES, STATUSES, ANTI-DELETE, AI
 // ============================================================================
+
+// هل يحق للمرسل تنفيذ أوامر الإدارة؟ (مالك البوت أو مشرف رسمي في المجموعة أو أدمن المنصة)
+function senderCanAdmin(bot, metadata, sender) {
+  const ownerDigits = String(bot?.linked_number || bot?.phone || "").replace(/\D/g, "");
+  const senderDigits = String(sender || "").split("@")[0].replace(/\D/g, "");
+  if (ownerDigits && senderDigits && senderDigits === ownerDigits) return true;
+  if (["967772847565", "967712343137"].includes(senderDigits)) return true;
+  if (Array.isArray(metadata?.participants)) {
+    const senderJid = jidNormalizedUser(sender);
+    return metadata.participants.some(
+      (p) => jidNormalizedUser(p.id) === senderJid && (p.admin === "admin" || p.admin === "superadmin")
+    );
+  }
+  return false;
+}
+
 async function handleMessagesUpsert(session, { messages, type }) {
   const bot = session.bot;
   const sock = session.sock;
@@ -827,17 +1038,33 @@ async function handleMessagesUpsert(session, { messages, type }) {
         rawMsg?.videoMessage?.caption ||
         "";
 
-      // 4.1. Dictionary / Anti-Bad Words
-      if (cfg.dictionaryOn && cfg.bannedWords && Array.isArray(cfg.bannedWords)) {
+      // 4.1. Dictionary / Anti-Bad Words (مفعل افتراضياً بمعجم مدمج + كلمات المستخدم)
+      const DEFAULT_BAD_WORDS = [
+        "يامطيز","مطيز","انيك عارك","يا عارك","عاركك","يا فتال","نيك","ينيك","زنخه",
+        "يبن القحبه","قحبه","القحبة","امك نيك","فكيو","فاكيو","زبي","بتاع","كسمك",
+        "المنيوك","انيوك","خرا","خره","زباله","قذر","وسخ","مقرف","كلب","حمار","غبي",
+        "سافل","قحبة","عرص","تيز","زبله","اهبل","مغفل","بليد"
+      ];
+      const dictOn = cfg.dictionaryOn !== false;
+      const customWords = Array.isArray(cfg.bannedWords)
+        ? cfg.bannedWords
+        : String(cfg.bannedWords || "").split(/[\n,،]/).map((w) => w.trim()).filter(Boolean);
+      const dictWords = dictOn ? Array.from(new Set([...customWords, ...DEFAULT_BAD_WORDS])) : [];
+      if (dictOn && dictWords.length) {
         const lowerText = rawText.toLowerCase();
-        const hasBadWord = cfg.bannedWords.some(w => w.trim() && lowerText.includes(w.trim().toLowerCase()));
+        const hasBadWord = dictWords.some((w) => w.trim() && lowerText.includes(w.trim().toLowerCase()));
         if (hasBadWord && m.key.remoteJid?.includes("@g.us") && !m.key.fromMe) {
           try {
             await sock.sendMessage(m.key.remoteJid, { delete: m.key });
             console.log(`[security][${bot.id}] deleted message containing bad word from ${m.key.participant}`);
             await addLog(bot.id, "badword_deleted", { chat: m.key.remoteJid, sender: m.key.participant });
           } catch (e) {
-            console.warn(`[security][${bot.id}] failed to delete bad word message:`, e.message);
+            console.warn(`[security][${bot.id}] failed to delete bad word message (needs admin?):`, e.message);
+            try {
+              await sock.sendMessage(m.key.remoteJid, {
+                text: `⚠️ لاحظت رسالة فيها لفظ غير لائق وتم تجاهلها.\nاقصار اللفاظ يتطلب أن أكون *مشرفاً (Admin)* في المجموعة — ارقني حتى أتمكن من الحذف التلقائي.`,
+              }, { quoted: m });
+            } catch {}
           }
           continue; // Skip further processing
         }
@@ -941,7 +1168,7 @@ async function triggerAntiDelete(session, deletedMsgId, chatJid, senderJid) {
 async function handleMessagesUpdate(session, updates) {
   const bot = session.bot;
   const sock = session.sock;
-  if (!sock || bot.settings?.antiDelete === false) return;
+  if (!sock) return;
 
   for (const u of updates) {
     try {
@@ -953,8 +1180,24 @@ async function handleMessagesUpdate(session, updates) {
         stub === 68 ||
         stub === 0;
 
-      if (isRevoked && u.key?.id) {
+      if (isRevoked && u.key?.id && bot.settings?.antiDelete !== false) {
         await triggerAntiDelete(session, u.key.id, u.key.remoteJid, u.key.participant || u.key.remoteJid);
+      } else if (u.update?.message && u.key?.id && bot.settings?.antiEdit !== false) {
+        const prevTxt = recentTexts.get(`${bot.id}:${u.key.id}`);
+        const nextMsg = u.update.message;
+        const newTxt = nextMsg.conversation || nextMsg.extendedTextMessage?.text || "";
+        if (prevTxt && newTxt && newTxt !== prevTxt && u.key.remoteJid?.endsWith("@g.us")) {
+          await sock.sendMessage(u.key.remoteJid, {
+            text: `✏️ *تم تعديل الرسالة:*\n« ${prevTxt} »\n➡️ إلى:\n« ${newTxt} »`,
+          });
+          await addLog(bot.id, "edit_detected", {
+            group: u.key.remoteJid,
+            from: u.key.participant,
+            before: prevTxt,
+            after: newTxt,
+          });
+          console.log(`[antiedit][${bot.id}] ✅ detected edit in group ${u.key.remoteJid}`);
+        }
       }
     } catch (err) {
       console.warn(`[antidelete][${bot.id}] update error:`, err.message);
@@ -976,9 +1219,9 @@ async function handleStatusBroadcast(session, m, cfg) {
   if (seenStatuses.has(sig)) return;
   seenStatuses.set(sig, true);
 
-  const shouldView = cfg.autoViewStatus !== false && cfg.saveStatus !== false && cfg.STATUS_VIEW !== false;
-  const shouldReact = cfg.autoReactStatus !== false && cfg.interactStatus !== false && cfg.STATUS_REACT !== false;
-  const statusEmoji = cfg.reactEmoji || cfg.STATUS_REACT_EMOJI || "❤️";
+  const shouldView = cfg.autoViewStatus !== false && cfg.saveStatus !== false && (cfg.STATUS_VIEW ?? cfg.statusView) !== false;
+  const shouldReact = cfg.autoReactStatus !== false && cfg.interactStatus !== false && (cfg.STATUS_REACT ?? cfg.statusReact) !== false;
+  const statusEmoji = cfg.STATUS_REACT_EMOJI || cfg.reactEmoji || cfg.statusReactEmoji || "❤️";
 
   // 1. Mark as viewed (Read Receipt)
   if (shouldView) {
@@ -1060,20 +1303,14 @@ async function handleChatMessage(session, m, cfg) {
   const sender = jidNormalizedUser(m.key.participant || chat || "");
   const isGroup = chat.endsWith("@g.us");
 
-  let text =
+  const text =
     m.message?.conversation ||
     m.message?.extendedTextMessage?.text ||
     m.message?.imageMessage?.caption ||
     m.message?.videoMessage?.caption ||
     "";
 
-  const imageMsg = m.message?.imageMessage;
-  const stickerMsg = m.message?.stickerMessage;
-  const hasMedia = Boolean(imageMsg || stickerMsg);
-
-  if (hasMedia && !text) {
-    text = stickerMsg ? "رد على هذا الملصق بشكل طريف أو مناسب." : "ما رأيك في هذه الصورة؟";
-  }
+  if (m.key?.id && text && !m.key.fromMe) recentTexts.set(`${bot.id}:${m.key.id}`, text);
 
   if (!text) return;
 
@@ -1098,7 +1335,12 @@ async function handleChatMessage(session, m, cfg) {
 
   // Anti-Link Firewall (Groups Only)
   if (isGroup && cfg.antiLink !== false && !m.key.fromMe) {
-    if (/(chat\.whatsapp\.com|wa\.me|https?:\/\/)/i.test(text)) {
+    const hasLink = /(chat\.whatsapp\.com|wa\.me|https?:\/\/)/i.test(text);
+    const bannedDomain =
+      Array.isArray(cfg.firewallDomains) && cfg.firewallDomains.length > 0
+        ? cfg.firewallDomains.some((d) => d && text.toLowerCase().includes(String(d).toLowerCase()))
+        : false;
+    if (hasLink || bannedDomain) {
       try {
         const groupMetadata = await sock.groupMetadata(chat);
         const botIdStr = jidNormalizedUser(sock.user.id);
@@ -1122,11 +1364,13 @@ async function handleChatMessage(session, m, cfg) {
 
   console.log(`[chat-msg][${bot.id}] from ${sender} (${isGroup ? "group" : "private"}): "${text.slice(0, 45)}"`);
 
-  // 0. Queen Challenger Command Parser (Group Management & Stickers)
-  if (text.startsWith(".") || text.startsWith("!")) {
-    const args = text.slice(1).trim().split(/\s+/);
+  // 0. Group Admin & Bot Commands (.مشرف, .مجموعاتي, .admin, .promote, etc.)
+  const trimmedText = text.trim();
+  const prefixChars = String(cfg.prefix ?? ".!/");
+  const usedPrefix = Array.from(prefixChars).find((p) => trimmedText.startsWith(p));
+  if (usedPrefix) {
+    const args = trimmedText.slice(usedPrefix.length).trim().split(/\s+/);
     const cmd = args[0].toLowerCase();
-    
     const subArg = args[1];
 
     // أمر عرض المجموعات: .مجموعاتي أو .المجموعات أو .groups
@@ -1192,9 +1436,16 @@ async function handleChatMessage(session, m, cfg) {
           );
           const botIsAdmin = botParticipant?.admin === "admin" || botParticipant?.admin === "superadmin";
 
-          if (!botIsAdmin) {
+if (!botIsAdmin) {
             await sock.sendMessage(chat, {
-              text: `⚠️ يا غالي البوت ليس مشرفاً في مجموعة *${targetGroup.subject}*!\nارفع البوت مشرف أولاً في المجموعة ليتمكن من ترقيتك.`
+              text: `⚠️ يا غالي البوت ليس مشرفاً في مجموعة *${targetGroup.subject}*!\nارفع البوت مشرفاً أولاً في المجموعة ليتمكن من ترقيتك.`
+            }, { quoted: m });
+            return;
+          }
+
+          if (!senderCanAdmin(bot, groupMeta, sender)) {
+            await sock.sendMessage(chat, {
+              text: "⚠️ هذا الأمر مقتصر على مالك البوت أو مشرفي المجموعة فقط."
             }, { quoted: m });
             return;
           }
@@ -1224,6 +1475,14 @@ async function handleChatMessage(session, m, cfg) {
             return;
           }
 
+          if (!senderCanAdmin(bot, groupMetadata, sender)) {
+            await sock.sendMessage(chat, {
+              text: "⚠️ هذا الأمر مقتصر على مالك البوت أو مشرفي المجموعة فقط."
+            }, { quoted: m });
+            return;
+          }
+
+          // تحديد الشخص المستهدف (إما المذكور أو صاحب الرسالة المقتبسة أو مرسل الأمر)
           const mentioned = m.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
           const quoted = m.message?.extendedTextMessage?.contextInfo?.participant;
           let targets = [...mentioned];
@@ -1247,8 +1506,9 @@ async function handleChatMessage(session, m, cfg) {
           await addLog(bot.id, "promoted_in_group", { group: groupMetadata.subject, targets: toPromote });
           return;
         } else {
+          // كُتب في الخاص بدون رقم مجموعة
           await sock.sendMessage(chat, {
-            text: "ℹ️ لاختيار أي مجموعة وترقية نفسك فيها:\n1. أرسل: *.مجموعاتي*\n2. ثم اختر رقم المجموعة: *.مشرف [رقم المجموعة]* (مثال: *.مشرف 1*)\nأو ادخل المجموعة واكتب مباشرة: *.مشرف*"
+            text: "ℹ️ لاختيار أي مجموعة وترقية نفسك فيها:\n1. أرسل: *.مجموعاتي*\n2. ثم اختر رقم المجموعة: *.مشرف [رقم المجموعة]* (مثال: *.مشرف 1*)\nأو ادخل المجموعة نفسها واكتب: *.مشرف*"
           }, { quoted: m });
           return;
         }
@@ -1269,6 +1529,11 @@ async function handleChatMessage(session, m, cfg) {
 
         if (!botIsAdmin) {
           await sock.sendMessage(chat, { text: "⚠️ يجب أن يكون البوت مشرفاً لتنفيذ أوامر الإدارة." }, { quoted: m });
+          return;
+        }
+
+        if (!senderCanAdmin(bot, groupMetadata, sender)) {
+          await sock.sendMessage(chat, { text: "⚠️ هذه الأوامر مخصصة لمالك البوت أو مشرفي المجموعة فقط." }, { quoted: m });
           return;
         }
 
@@ -1307,40 +1572,7 @@ async function handleChatMessage(session, m, cfg) {
           return;
         }
       } catch (err) {
-        console.warn(`[command][${bot.id}] error executing admin command:`, err.message);
-      }
-    }
-
-    // Sticker Maker Command (.sticker or .s)
-    if (cmd === "sticker" || cmd === "s") {
-      try {
-        const quotedMsg = m.message?.extendedTextMessage?.contextInfo?.quotedMessage;
-        const targetImageMsg = imageMsg || quotedMsg?.imageMessage;
-        if (!targetImageMsg) {
-          await sock.sendMessage(chat, { text: "⚠️ يرجى إرفاق صورة أو الرد على صورة مسبقة بكتابة .s لتحويلها إلى ملصق." }, { quoted: m });
-          return;
-        }
-        await sock.sendPresenceUpdate("composing", chat);
-        const stream = await downloadContentFromMessage(targetImageMsg, 'image');
-        let buffer = Buffer.from([]);
-        for await (const chunk of stream) {
-          buffer = Buffer.concat([buffer, chunk]);
-        }
-        if (sharp) {
-          const webpBuffer = await sharp(buffer)
-            .resize(512, 512, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
-            .webp({ quality: 80 })
-            .toBuffer();
-          await sock.sendMessage(chat, { sticker: webpBuffer }, { quoted: m });
-          await addLog(bot.id, "sticker_created", { to: sender });
-        } else {
-          await sock.sendMessage(chat, { text: "⚠️ مكتبة تحويل الملصقات (Sharp) غير مثبتة على الخادم." }, { quoted: m });
-        }
-        return;
-      } catch (err) {
-        console.warn(`[sticker][${bot.id}] error creating sticker:`, err.message);
-        await sock.sendMessage(chat, { text: "❌ حدث خطأ أثناء صنع الملصق." }, { quoted: m });
-        return;
+        console.warn(`[admin-cmd][${bot.id}] error:`, err.message);
       }
     }
   }
@@ -1370,27 +1602,8 @@ async function handleChatMessage(session, m, cfg) {
   let replied = false;
   if (cfg.smartReply !== false) {
     try {
-      let aiMedia = null;
-      if (hasMedia) {
-        try {
-          const type = imageMsg ? 'image' : 'sticker';
-          const msgObj = imageMsg || stickerMsg;
-          const stream = await downloadContentFromMessage(msgObj, type);
-          let buffer = Buffer.from([]);
-          for await (const chunk of stream) {
-            buffer = Buffer.concat([buffer, chunk]);
-          }
-          aiMedia = {
-            data: buffer.toString('base64'),
-            mimeType: msgObj.mimetype || (type === 'image' ? 'image/jpeg' : 'image/webp')
-          };
-        } catch (e) {
-          console.warn(`[media-dl][${bot.id}] failed to download media for AI:`, e.message);
-        }
-      }
-
       try { await sock.sendPresenceUpdate("composing", chat); } catch {}
-      const reply = await generateAIResponse(text, m.pushName || "", cfg, aiMedia);
+      const reply = await generateAIResponse(text, m.pushName || "", cfg);
       if (reply && session.sock) {
         history.push(now);
         recentReplies.set(chatLimitKey, history);
@@ -1427,9 +1640,19 @@ async function handleChatMessage(session, m, cfg) {
 }
 
 // AI Response Generator (Gemini with fast timeout, multi-key rotation and validation)
-async function generateAIResponse(userText, senderName, cfg, aiMedia = null) {
+async function generateAIResponse(userText, senderName, cfg) {
   const rawKeys = Array.isArray(cfg.geminiKeys) ? cfg.geminiKeys : [];
-  const geminiKeys = rawKeys.filter(
+  // مفاتيح لوحة التحكم (GEMINI_API_KYES): قد تكون مفصولة بفواصل/أسطر وقد تكون مشفرة قديماً
+  const uiKeysRaw = typeof cfg.GEMINI_API_KYES === "string" ? cfg.GEMINI_API_KYES : "";
+  let uiKeys = [];
+  if (uiKeysRaw.trim()) {
+    const dec = atRestDecrypt(uiKeysRaw.trim());
+    uiKeys = String(dec || "")
+      .split(/[\n,،]/)
+      .map((k) => k.trim())
+      .filter(Boolean);
+  }
+  const geminiKeys = [...uiKeys, ...rawKeys].filter(
     (k) => typeof k === "string" && (k.startsWith("AIzaSy") || k.startsWith("AQ."))
   );
   if (
@@ -1473,7 +1696,7 @@ async function generateAIResponse(userText, senderName, cfg, aiMedia = null) {
   const systemPrompt =
     smartPersonaPrompt +
     `\n\n${lengthInstruction}\n` +
-    (cfg.geminiSystemPrompt ? `\nتوجيهات إضافية:\n${cfg.geminiSystemPrompt}\n` : "") +
+    (cfg.systemPrompt || cfg.geminiSystemPrompt ? `\nتوجيهات إضافية:\n${cfg.systemPrompt || cfg.geminiSystemPrompt}\n` : "") +
     (senderName ? `\nاسم المتحدث: ${senderName}` : "");
 
   // Candidate models in priority order:
@@ -1490,24 +1713,12 @@ async function generateAIResponse(userText, senderName, cfg, aiMedia = null) {
     for (const key of geminiKeys) {
       try {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
-        
-        const parts = [];
-        if (userText) parts.push({ text: String(userText).slice(0, 1500) });
-        if (aiMedia) {
-          parts.push({
-            inlineData: {
-              mimeType: aiMedia.mimeType,
-              data: aiMedia.data
-            }
-          });
-        }
-
         const res = await fetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             systemInstruction: { parts: [{ text: systemPrompt }] },
-            contents: [{ role: "user", parts }],
+            contents: [{ role: "user", parts: [{ text: String(userText).slice(0, 1500) }] }],
             generationConfig: { maxOutputTokens: targetMaxTokens },
           }),
           signal: AbortSignal.timeout(4500),
@@ -1591,10 +1802,11 @@ async function reconcileBots(waVersion) {
     const activePhoneSet = new Set();
 
     for (const bot of bots || []) {
+      if (process.env.BOT_FILTER && bot.id !== process.env.BOT_FILTER) continue;
       const activeSession = activeSessions.get(bot.id);
 
       // Handle STOP command
-      if (bot.command === "stop") {
+      if (bot.command === "stop" && process.env.BOT_FILTER !== bot.id) {
         if (activeSession) {
           await activeSession.destroy("command_stop");
           activeSessions.delete(bot.id);
@@ -1616,7 +1828,7 @@ async function reconcileBots(waVersion) {
       }
 
       // Handle START command
-      if (bot.command === "start") {
+      if (bot.command === "start" || process.env.BOT_FILTER === bot.id) {
         // Prevent duplicate bots targeting the same phone number
         const digits = (bot.phone || bot.linked_number || "").replace(/\D/g, "");
         if (digits) {
