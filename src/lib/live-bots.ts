@@ -7,8 +7,9 @@ export async function getLiveBotIds(minutes = 5): Promise<Set<string>> {
   const since = new Date(Date.now() - minutes * 60_000).toISOString();
   const { data } = await admin
     .from("bot_logs")
-    .select("bot_id")
+    .select("bot_id, event")
     .gte("created_at", since)
+    .in("event", ["connected", "smart_replied", "status_handled", "message_recovered", "viewonce_saved", "call_rejected", "auto_replied", "keyword_replied"])
     .limit(1000);
 
   const live = new Set<string>();
