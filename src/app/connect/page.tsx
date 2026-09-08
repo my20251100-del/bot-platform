@@ -42,6 +42,7 @@ export default function ConnectPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [copiedSecret, setCopiedSecret] = useState(false);
   const [countdown, setCountdown] = useState(120);
   const [connectToken, setConnectToken] = useState<string | null>(() => {
     if (typeof window !== "undefined") {
@@ -185,6 +186,13 @@ export default function ConnectPage() {
     navigator.clipboard.writeText(raw);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const copySecret = () => {
+    if (!bot?.secret) return;
+    navigator.clipboard.writeText(bot.secret);
+    setCopiedSecret(true);
+    setTimeout(() => setCopiedSecret(false), 2000);
   };
 
   return (
@@ -370,9 +378,30 @@ export default function ConnectPage() {
             <p className="text-sm text-muted">
               بوتك متصل الآن بالرقم <span dir="ltr" className="font-mono font-bold text-emerald-400">+{bot.linked_number || number}</span>.
             </p>
-            <p className="text-xs text-muted">
-              أرسلنا لك رسالة في محادثتك بواتساب تحتوي على كلمة السر الخاصة بإعداداتك.
-            </p>
+            {bot.secret ? (
+              <div className="rounded-xl border border-accent/30 bg-surface/50 p-4 text-start w-full space-y-2.5">
+                <p className="text-xs font-bold text-accent">🔑 كلمة السر الخاصة بإعداداتك:</p>
+                <div className="flex items-center justify-between gap-3">
+                  <span dir="ltr" className="select-all font-mono text-xl sm:text-2xl font-black text-white tracking-widest">
+                    {bot.secret}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={copySecret}
+                    className={`shrink-0 rounded-lg px-3.5 py-2 text-xs font-bold transition shadow ${
+                      copiedSecret ? "bg-emerald-500 text-black shadow-emerald-500/25" : "bg-accent/15 text-accent border border-accent/40 hover:bg-accent hover:text-accent-fg"
+                    }`}
+                  >
+                    {copiedSecret ? "تم النسخ ✓" : "نسخ"}
+                  </button>
+                </div>
+                <p className="text-xs text-muted">احتفظ بها — ستحتاجها للدخول إلى إعدادات البوت. وستصلك أيضاً في رسالة «رسالة لنفسك» داخل واتساب.</p>
+              </div>
+            ) : (
+              <p className="text-xs text-muted">
+                أرسلنا لك رسالة في محادثتك بواتساب تحتوي على كلمة السر الخاصة بإعداداتك.
+              </p>
+            )}
             <div className="flex flex-col gap-3 pt-2">
               <Link
                 href={`/bot/setting?number=${encodeURIComponent(bot.linked_number || number)}${bot.secret ? `&secret=${encodeURIComponent(bot.secret)}` : ""}`}

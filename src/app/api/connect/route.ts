@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createHash, createDecipheriv } from "crypto";
 import { createAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { isAdminUser } from "@/lib/admin";
@@ -9,6 +10,53 @@ import { signConnectToken, verifyConnectToken } from "@/lib/connect-token";
 export const runtime = "nodejs";
 
 const L = (lang: string | undefined, ar: string, en: string) => (lang === "en" ? en : ar);
+
+// مطابقة خوارزمية المحرك: فك تشفير settings.secret (AES-256-GCM) بقيمة at-rest من المحرك
+const AT_REST_PREFIX = "enc:v1:";
+function atRestKeyFrom(seed: string) {
+  return createHash("sha256").update(`hatemx-bot-at-rest-v1:${seed}`).digest();
+}
+function atRestCandidateKeys() {
+  const seeds = [
+    process.env.APP_ENCRYPTION_KEY,
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    process.env.SUPABASE_SERVICE_KEY,
+    process.env.SUPABASE_KEY,
+    "",
+  ];
+  const seen = new Set();
+  const keys = [];
+  for (const seed of seeds) {
+    const key = atRestKeyFrom(String(seed || ""));
+    if (!seen.has(key.toString("hex"))) {
+      seen.add(key.toString("hex"));
+      keys.push(key);
+    }
+  }
+  return keys;
+}
+function atRestDecrypt(value: string | null | undefined): string {
+  if (typeof value !== "string" || !value.startsWith(AT_REST_PREFIX)) return value || "";
+  try {
+    const raw = Buffer.from(value.slice(AT_REST_PREFIX.length), "base64");
+    const iv = raw.subarray(0, 12);
+    const tag = raw.subarray(12, 28);
+    const data = raw.subarray(28);
+    for (const key of atRestCandidateKeys()) {
+      try {
+        const decipher = createDecipheriv("aes-256-gcm", key, iv);
+        decipher.setAuthTag(tag);
+        const plain = Buffer.concat([decipher.update(data), decipher.final()]);
+        return plain.toString("utf8");
+      } catch {
+        // جرّب المفتاح التالي
+      }
+    }
+    return "";
+  } catch {
+    return "";
+  }
+}
 
 function maskPhone(phone: string | null | undefined): string {
   const d = String(phone || "").replace(/\D/g, "");
@@ -28,6 +76,7 @@ function toBotPayload(b: any, digits: string) {
     pair_code: b.pair_code ?? null,
     qr: b.qr ?? null,
     isPending,
+    secret: b.settings?.secret ? atRestDecrypt(b.settings.secret) : null,
     last_error: b.metadata?.last_error ?? null,
     attempt: b.metadata?.attempt ?? 0,
   };
