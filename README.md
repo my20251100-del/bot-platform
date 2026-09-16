@@ -6,7 +6,9 @@
 
 ## 🏗️ المعمارية (Architecture)
 
-```
+<div dir="ltr">
+
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │  Vercel (Serverless)                                        │
 │  ├─ Frontend (Next.js App Router)                          │
@@ -38,6 +40,8 @@
 └─────────────────────────────────────────────────────────────┘
 ```
 
+</div>
+
 > **⚠️ ملاحظة مهمة:** Vercel Serverless **لا يدعم الاتصالات الدائمة (WebSocket)**. محرك `Baileys` يحتاج لاتصال WebSocket دائم مع واتساب، لذا **يجب تشغيله كخدمة مستقلة** (VPS، Railway، Render، أو محلياً مع pm2). الـ Cron Job في Vercel يعالج فقط المهام الصادرة (طابور الإشعارات، المنشورات المجدولة، أوامر البوت) ولا يحل محل المحرك الدائم.
 
 ---
@@ -59,31 +63,42 @@
 3. فعّل **Row Level Security** (مفعل مسبقاً في SQL)
 4. انسخ `Project URL` و `anon key` و `service_role key`
 
-### 3. متغيرات البيئة (`.env.local`)
+### 3. متغيرات البيئة &lrm;(`.env.local`)&lrm;
+
+<div dir="ltr">
+
 ```bash
 # Supabase
 NEXT_PUBLIC_SUPABASE_URL=https://xxxx.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
 SUPABASE_SERVICE_ROLE_KEY=eyJ...
 
-# التطبيق
+# App URL / التطبيق
 APP_URL=https://your-app.vercel.app
 
-# اختياري: حماية Cron
+# Cron Security / حماية اختيارية
 CRON_SECRET=random-long-string
 ```
 
+</div>
+
 ### 4. النشر على Vercel
+
+<div dir="ltr">
+
 ```bash
-# تثبيت الاعتماديات
+# Install dependencies / تثبيت الاعتماديات
 npm install
 
-# بناء محلي للتحقق
+# Build check / بناء محلي للتحقق
 npm run build
 
-# النشر
+# Deploy / النشر
 vercel --prod
 ```
+
+</div>
+
 - أضف متغيرات البيئة في لوحة Vercel (Settings → Environment Variables)
 - سيتم تفعيل Cron Job تلقائياً عبر `vercel.json` (كل دقيقة)
 
@@ -91,23 +106,30 @@ vercel --prod
 المحرك هو الذي يتصل فعلياً بواتساب ويستقبل الرسائل/الحالات.
 
 **خيار A: PM2 (مُوصى به)**
+
+<div dir="ltr">
+
 ```bash
-# على الخادم (VPS / Railway / Render)
+# Clone & install / على الخادم
 git clone <repo> /opt/bot-platform
 cd /opt/bot-platform
 npm install --production
 
-# نسخ .env.local مع مفاتيح Supabase
+# Setup .env.local / نسخ المفاتيح
 cp .env.example .env.local
-# عدل القيم...
 
-# تشغيل عبر PM2
+# Run via PM2 / تشغيل المحرك
 pm2 start ecosystem.config.js
 pm2 save
 pm2 startup
 ```
 
+</div>
+
 **خيار B: systemd (Linux)**
+
+<div dir="ltr">
+
 ```bash
 sudo cp bot-engine.service /etc/systemd/system/
 sudo systemctl daemon-reload
@@ -116,17 +138,26 @@ sudo systemctl start bot-engine
 journalctl -u bot-engine -f
 ```
 
+</div>
+
 **خيار C: Docker**
+
+<div dir="ltr">
+
 ```bash
 docker build -t wabot-engine .
 docker run -d --name wabot-engine --env-file .env.local wabot-engine
 ```
 
+</div>
+
 ---
 
 ## 📁 هيكل المشروع
 
-```
+<div dir="ltr">
+
+```text
 ├── src/
 │   ├── app/
 │   │   ├── api/
@@ -166,6 +197,8 @@ docker run -d --name wabot-engine --env-file .env.local wabot-engine
 └── package.json
 ```
 
+</div>
+
 ---
 
 ## 🔧 نقاط النهاية (API)
@@ -187,11 +220,15 @@ docker run -d --name wabot-engine --env-file .env.local wabot-engine
 
 ملف `vercel.json` يفعّل Cron Job يستدعي `/api/bot/cron` **كل دقيقة**:
 
+<div dir="ltr">
+
 ```json
 {
   "crons": [{ "path": "/api/bot/cron", "schedule": "*/1 * * * *" }]
 }
 ```
+
+</div>
 
 المعالجة تشمل:
 - `notify_queue` — إرسال رسائل OTP والإشعارات
@@ -219,11 +256,16 @@ docker run -d --name wabot-engine --env-file .env.local wabot-engine
 - لا يحتاج `NEXT_PUBLIC_*` — فقط مفاتيح الخدمة
 
 ### مراقبة المحرك
+
+<div dir="ltr">
+
 ```bash
 pm2 logs wabot-engine -f
-# أو
+# or
 journalctl -u bot-engine -f
 ```
+
+</div>
 
 ---
 
