@@ -63,7 +63,7 @@
 3. فعّل **Row Level Security** (مفعل مسبقاً في SQL)
 4. انسخ `Project URL` و `anon key` و `service_role key`
 
-### 3. متغيرات البيئة &lrm;(`.env.local`)&lrm;
+### 3. إعداد متغيرات البيئة — `.env.local`
 
 <div dir="ltr">
 
