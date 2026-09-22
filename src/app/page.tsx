@@ -10,6 +10,8 @@ import { getServerLocale } from "@/lib/server-locale";
 import { tr, type Locale } from "@/lib/i18n";
 import { createAdmin } from "@/lib/supabase/admin";
 
+export const dynamic = "force-dynamic";
+
 type Bi = { ar: string; en: string };
 
 const coreFeatures: { icon: string; badge: Bi; title: Bi; desc: Bi }[] = [
