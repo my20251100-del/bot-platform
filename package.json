@@ -17,7 +17,6 @@
     "@whiskeysockets/baileys": "^7.0.0-rc14",
     "https-proxy-agent": "^9.1.0",
     "link-preview-js": "^3.2.0",
-    "next": "16.3.2",
     "nodemailer": "^9.1.1",
     "pino": "^10.3.1",
     "qrcode": "^1.5.4",
@@ -26,6 +25,7 @@
     "sharp": "^0.35.4"
   },
   "devDependencies": {
+    "@opennextjs/cloudflare": "^1.20.6",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/nodemailer": "^8.0.1",
@@ -33,7 +33,14 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.2",
+    "next": "^16.3.5",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "wrangler": "^4.136.1"
+  },
+  "allowScripts": {
+    "esbuild@0.25.4": true,
+    "esbuild@0.28.1": true,
+    "workerd@1.20260921.1": true
   }
 }

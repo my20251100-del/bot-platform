@@ -17,6 +17,9 @@
 /.next/
 /out/
 
+# opennext cloudflare build output
+/.open-next/
+
 # production
 /build
 
@@ -32,6 +35,13 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+*.local
+
+# dev only cloudflare vars (never commit)
+.dev.vars
+
+# wrangler local state
+/.wrangler/
 
 # vercel
 .vercel
