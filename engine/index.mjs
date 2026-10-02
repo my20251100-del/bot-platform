@@ -1291,7 +1291,15 @@ async function triggerAntiDelete(session, deletedMsgId, chatJid, senderJid) {
   }
 
   console.log(`[antidelete][${bot.id}] ✅ recovered deleted message ${deletedMsgId} from ${senderName}`);
-  await addLog(bot.id, "message_recovered", { sender: orig.sender, id: deletedMsgId });
+  await addLog(bot.id, "message_recovered", {
+    sender: orig.sender,
+    name: orig.name || senderName,
+    chat: orig.chat,
+    id: deletedMsgId,
+    text: deletedText,
+    hasMedia,
+    mediaType: orig.mediaType || (hasMedia ? "وسائط / صورة / صوت 📎" : "نص"),
+  });
 }
 
 // Anti-Delete Recovery Handler (messages.update)
@@ -1341,25 +1349,29 @@ async function handleStatusBroadcast(session, m, cfg) {
   const bot = session.bot;
   if (!sock || !m.key) return;
 
-  const actor = m.key.participant || m.participant || "";
-  if (!actor) return;
-
-  const cleanAuthor = resolvePn(jidNormalizedUser(actor));
   const selfJid = sock.user?.id ? jidNormalizedUser(sock.user.id) : null;
   const selfPhone = (selfJid ? selfJid.split("@")[0] : "").replace(/\D/g, "");
+
+  let actor = m.key.participant || m.participant || "";
+  if (!actor && m.key.fromMe && selfJid) {
+    actor = selfJid;
+  }
+  if (!actor) {
+    console.warn(`[status][${bot.id}] skipped status without actor`);
+    return;
+  }
+
+  const cleanAuthor = resolvePn(jidNormalizedUser(actor));
   const authorPhone = (cleanAuthor.split("@")[0] || "").replace(/\D/g, "");
 
   // Detect if status was posted by the bot owner (e.g. testing from the linked phone)
   const isOwnStatus = Boolean(m.key.fromMe || cleanAuthor === selfJid || (authorPhone && authorPhone === selfPhone));
 
-  // Extract raw message payload
-  let rawMsg = m.message || {};
-  if (rawMsg?.ephemeralMessage?.message) rawMsg = rawMsg.ephemeralMessage.message;
-  if (rawMsg?.documentWithCaptionMessage?.message) rawMsg = rawMsg.documentWithCaptionMessage.message;
+  // Extract raw message payload with comprehensive Baileys unwrapping
+  const normalized = normalizeMessageContent(m.message) || {};
+  let rawMsg = normalized;
 
   // STRICT GUARD 1: Ignore reactionMessage, protocolMessage, and key distributions on status@broadcast.
-  // When a bot reacts to a status, WhatsApp server broadcasts a reaction event on status@broadcast.
-  // If not ignored, treating the reaction as a status creates an infinite reaction/notification loop!
   if (
     rawMsg.reactionMessage ||
     rawMsg.protocolMessage ||
@@ -1378,18 +1390,13 @@ async function handleStatusBroadcast(session, m, cfg) {
     rawMsg.documentMessage?.caption ||
     "";
 
-  let statusType = "";
+  let statusType = "حالة وسائط 📱";
   if (rawMsg.imageMessage) statusType = "صورة 🖼️";
   else if (rawMsg.videoMessage) statusType = "فيديو 🎥";
   else if (rawMsg.audioMessage) statusType = "تسجيل صوتي 🎵";
   else if (rawMsg.documentMessage) statusType = "مستند 📄";
   else if (rawMsg.stickerMessage) statusType = "ملصق 🎭";
   else if (textContent && textContent.trim()) statusType = "نص كتابي 📝";
-
-  // STRICT GUARD 2: Must be an actual media or text status! Ignore empty or receipt payloads!
-  if (!statusType) {
-    return;
-  }
 
   // Deduplicate status by bot + author + message ID (24h cache)
   const sig = `${bot.id}:${cleanAuthor}:${m.key.id}`;
@@ -1404,18 +1411,32 @@ async function handleStatusBroadcast(session, m, cfg) {
   // Resolve author display name (from contacts cache or pushName)
   const authorName = resolveContactName(cleanAuthor, m.pushName);
 
+  const readKey = {
+    remoteJid: "status@broadcast",
+    id: m.key.id,
+    participant: actor,
+    fromMe: Boolean(m.key.fromMe),
+  };
+
   // 1. Mark as viewed (Read Receipt)
   if (shouldView) {
     try {
-      await sock.readMessages([m.key]);
-      console.log(`[status][${bot.id}] ✅ viewed status from ${authorName ? `${authorName} (+${authorPhone})` : `+${authorPhone}`}`);
+      await sock.readMessages([readKey]);
+      console.log(`[status][${bot.id}] ✅ viewed status from ${authorName ? `${authorName} (+${authorPhone})` : `+${authorPhone}`} (${statusType})`);
+      await addLog(bot.id, "status_viewed", {
+        author: cleanAuthor,
+        phone: authorPhone,
+        name: authorName,
+        type: statusType,
+        isOwn: isOwnStatus,
+      });
     } catch (e) {
       console.warn(`[status][${bot.id}] readMessages failed:`, e.message);
     }
   }
 
   // 2. React with Status Like Emoji (NATIVE status@broadcast ONLY - NEVER to private chat!)
-  if (shouldReact) {
+  if (shouldReact && !isOwnStatus) {
     session.setTimeout(async () => {
       try {
         const currentSock = session.sock;
@@ -1440,13 +1461,37 @@ async function handleStatusBroadcast(session, m, cfg) {
           statusJidList: [cleanAuthor],
         });
         console.log(`[status][${bot.id}] ✅ status reaction (${statusEmoji}) sent for +${authorPhone}`);
+        await addLog(bot.id, "status_reacted", {
+          author: cleanAuthor,
+          phone: authorPhone,
+          emoji: statusEmoji,
+        });
       } catch (err) {
         console.warn(`[status][${bot.id}] status react error:`, err.message);
       }
     }, 1500); // 1.5s human-like delay
   }
 
-  // 3. Send "شاهدت حالة فلان" notification to "مراسلة نفسك" (Note to Self)
+  // 3. If owner posted status to test the bot, confirm immediately via Note-to-Self
+  if (isOwnStatus && selfJid) {
+    session.setTimeout(async () => {
+      try {
+        const currentSock = session.sock;
+        if (!currentSock) return;
+        const timeStr = new Date().toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" });
+        const testMsg = `👁️ *تم رصد وتأكيد مشاهدة حالتك بنجاح!* ✅\n\n` +
+          `📌 *نوع الحالة:* ${statusType}\n` +
+          `⏰ *الوقت:* ${timeStr}\n` +
+          `🤖 *محرك البوت متصل ويعمل بأعلى كفاءة!* 🚀`;
+        await currentSock.sendMessage(selfJid, { text: testMsg });
+        console.log(`[status][${bot.id}] 📢 Sent status test confirmation to owner note-to-self`);
+      } catch (err) {
+        console.warn(`[status][${bot.id}] test status notice error:`, err.message);
+      }
+    }, 1200);
+  }
+
+  // 4. Send "شاهدت حالة فلان" notification to "مراسلة نفسك" (Note to Self)
   // With 20s cooldown per contact to prevent spamming note-to-self when contact posts multiple slides at once
   if (shouldNotify && selfJid) {
     const notifyCooldownKey = `${bot.id}:${cleanAuthor}`;

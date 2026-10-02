@@ -4,6 +4,7 @@ import Link from "next/link";
 import { maskPhone } from "@/lib/phone";
 import { Reveal, AnimatedNumber, Ring } from "@/components/ui/motion";
 import CreateBotForm from "./create-bot-form";
+import LiveAnalyticsDashboard from "@/components/live-analytics-dashboard";
 
 const statusStyles: Record<string, string> = {
   connected: "bg-emerald-500/15 text-emerald-400",
@@ -99,6 +100,11 @@ export default function DashboardLive({
           </div>
         </Reveal>
       </div>
+
+      {/* لوحة الإحصائيات التفاعلية الحية للمستخدم */}
+      <Reveal delay={0.52}>
+        <LiveAnalyticsDashboard />
+      </Reveal>
 
       {/* شريط الميزات الفورية النشطة (الحالات، الرسائل، الخصوصية) */}
       <Reveal delay={0.55}>

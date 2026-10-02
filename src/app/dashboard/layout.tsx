@@ -18,6 +18,7 @@ export default async function DashboardLayout({
 
   const navItems = [
     { href: "/dashboard", label: "الرئيسية (لوحة القيادة)", icon: "M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z M9 22V12h6v10" },
+    { href: "/dashboard/media-vault", label: "خزانة المحذوفات والوسائط 🗑️", icon: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4 M17 8l-5-5-5 5 M12 3v12" },
     ...(isAdmin
       ? [{ href: "/dashboard/analytics", label: "⚡ غرفة العمليات (Admin)", icon: "M3 3v18h18 M9 15l3-3 4 4 5-8" }]
       : []),
