@@ -180,7 +180,35 @@ const seenStatuses = new BoundedCache(2000, 86400000); // 24 hours TTL
 const recentReplies = new BoundedCache(1000, 60000); // 1 minute per chat
 const recentTexts = new BoundedCache(3000, 3600000); // نص الرسائل الأخيرة (لمضاد التعديل)
 const chatMemory = new BoundedCache(500, 7200000); // 2 hours AI memory
+const contactNames = new BoundedCache(5000, 86400000 * 7); // Contact display names cache (7 days TTL)
 const lidMap = new Map(); // Global LID cache
+
+function recordContactName(jid, name) {
+  if (!jid || !name) return;
+  const clean = jidNormalizedUser(jid);
+  const trimmed = String(name).trim();
+  if (!trimmed || trimmed.includes("@") || trimmed === clean || trimmed.replace(/\D/g, "") === clean.replace(/\D/g, "")) {
+    return;
+  }
+  contactNames.set(clean, trimmed);
+  const phone = clean.split("@")[0];
+  if (phone) contactNames.set(phone, trimmed);
+}
+
+function resolveContactName(jid, pushName) {
+  if (pushName && typeof pushName === "string") {
+    const trimmed = pushName.trim();
+    if (trimmed && !trimmed.includes("@") && !trimmed.startsWith("+") && !trimmed.endsWith(".net")) {
+      recordContactName(jid, trimmed);
+      return trimmed;
+    }
+  }
+  const clean = jid ? jidNormalizedUser(jid) : "";
+  if (!clean) return "";
+  const phone = clean.split("@")[0];
+  return contactNames.get(clean) || contactNames.get(phone) || "";
+}
+
 
 // Load existing LID cache once
 try {
@@ -297,10 +325,6 @@ export function classifyDisconnect(error) {
 
   if (code === DisconnectReason.connectionReplaced || /replaced|conflict/i.test(tag)) {
     return DisconnectCategory.SESSION_REPLACED;
-  }
-
-  if (code === 428) {
-    return DisconnectCategory.PAIRING_EXPIRED;
   }
 
   if (code === DisconnectReason.restartRequired || code === 515) {
@@ -525,8 +549,7 @@ async function startBotSession(bot, waVersion, opts = {}) {
       digits = "20" + digits;
     }
     const wantsPairingCode = bot.link_method === "pair_code" && digits.length >= 10;
-    const isDeadSession = String(bot.metadata?.last_error || "").includes("code 428");
-    const isAlreadyRegistered = Boolean(state?.creds?.registered) && !isDeadSession;
+    const isAlreadyRegistered = Boolean(state?.creds?.registered);
     const is515Restart = Boolean(opts?.is515Restart);
 
     if (wantsPairingCode && !isAlreadyRegistered && !is515Restart && bot.status !== "connected") {
@@ -574,6 +597,22 @@ async function startBotSession(bot, waVersion, opts = {}) {
       await handleIncomingCalls(session, calls);
     });
 
+    sock.ev.on("contacts.upsert", (contacts) => {
+      for (const c of contacts || []) {
+        if (!c?.id) continue;
+        const name = c.name || c.notify || c.verifiedName;
+        if (name) recordContactName(c.id, name);
+      }
+    });
+
+    sock.ev.on("contacts.update", (updates) => {
+      for (const c of updates || []) {
+        if (!c?.id) continue;
+        const name = c.name || c.notify || c.verifiedName;
+        if (name) recordContactName(c.id, name);
+      }
+    });
+
     sock.ev.on("group-participants.update", async (evt) => {
       await handleGroupParticipants(session, evt);
     });
@@ -602,6 +641,7 @@ async function handleConnectionUpdate(session, u, wantsPairingCode) {
     // جاهزاً بالكامل لاستقبال تدفق الاقتران، فيثبت الكود دون قتل من الخادم.
     if (!session.pairingRequested) {
       session.pairingRequested = true;
+      session.pairingRequestedAt = Date.now();
       const digits =
         session.pairingPhone ||
         String(session.bot?.phone || session.bot?.linked_number || "").replace(/\D/g, "").replace(/^0+/, "");
@@ -803,26 +843,27 @@ async function handleConnectionClose(session, error) {
     return;
   }
 
-  // 2. Unregistered Pairing Expired (code 428)
-  if (category === DisconnectCategory.PAIRING_EXPIRED && !isRegistered) {
-    console.log(`[WA][${botId}] Pairing code / QR expired for unregistered bot. Resetting auth for fresh pairing...`);
+  // 2. Unregistered Pairing Expired (only when TTL > 180s has passed without pairing)
+  const pairingAge = Date.now() - (session.pairingRequestedAt || 0);
+  if (!isRegistered && session.pairingCode && pairingAge > 180000) {
+    console.log(`[WA][${botId}] ⏳ Pairing code TTL exceeded (>180s). Resetting auth for fresh pairing...`);
     await session.destroy("pairing_expired");
     activeSessions.delete(botId);
 
     if (typeof session.clearStore === "function") {
-      await session.clearStore();
+      try { await session.clearStore(); } catch {}
     } else {
-      await supabase.from("bot_auth").delete().eq("bot_id", botId);
-      await supabase.from("bot_keys").delete().eq("bot_id", botId);
+      try { await supabase.from("bot_auth").delete().eq("bot_id", botId); } catch {}
+      try { await supabase.from("bot_keys").delete().eq("bot_id", botId); } catch {}
     }
 
     await updateBot(botId, {
       status: "pending",
       pair_code: null,
       qr: null,
-      metadata: { last_error: "pairing_expired", error_at: new Date().toISOString() },
+      metadata: { last_error: "انتهت صلاحية كود الاقتران (180 ثانية)، جارٍ التجديد...", error_at: new Date().toISOString() },
     });
-    await addLog(botId, "pairing_expired", { code });
+    await addLog(botId, "pairing_expired", { code, pairingAge });
     return;
   }
 
@@ -845,56 +886,7 @@ async function handleConnectionClose(session, error) {
     return;
   }
 
-  // 4.x Code 428 on a linked/registered bot — WhatsApp terminated the session.
-  // Force a fresh pairing code instead of retrying with dead credentials.
-  if (code === 428 && isRegistered) {
-    console.log(`[WA][${botId}] code 428 on linked bot — forcing fresh pairing...`);
-    await session.destroy("428_force_pairing");
-    activeSessions.delete(botId);
-    if (typeof session.clearStore === "function") {
-      try { await session.clearStore(); } catch {}
-    } else {
-      try { await supabase.from("bot_auth").delete().eq("bot_id", botId); } catch {}
-      try { await supabase.from("bot_keys").delete().eq("bot_id", botId); } catch {}
-    }
-    await updateBot(botId, {
-      status: "pending",
-      command: "start",
-      pair_code: null,
-      qr: null,
-      linked_number: null,
-      metadata: { last_error: "code 428 — تم إعادة تعيين الجلسة، يُرجى الاقتران مجددًا", error_at: new Date().toISOString(), attempt: 0 },
-    });
-    await addLog(botId, "428_force_pairing", { code });
-    startBotSession(session.bot, session.waVersion);
-    return;
-  }
-
-  // 4.y A pair_code bot that failed to reconnect ≥2× has dead creds — force fresh pairing.
-  if (session.bot.link_method === "pair_code" && session.consecutiveFailures >= 2) {
-    console.log(`[WA][${botId}] pair_code bot failed ${session.consecutiveFailures}× — forcing fresh pairing...`);
-    await session.destroy("pair_code_dead");
-    activeSessions.delete(botId);
-    if (typeof session.clearStore === "function") {
-      try { await session.clearStore(); } catch {}
-    } else {
-      try { await supabase.from("bot_auth").delete().eq("bot_id", botId); } catch {}
-      try { await supabase.from("bot_keys").delete().eq("bot_id", botId); } catch {}
-    }
-    await updateBot(botId, {
-      status: "pending",
-      command: "start",
-      pair_code: null,
-      qr: null,
-      linked_number: null,
-      metadata: { last_error: "code 428 — pair_code_dead — يُرجى الاقتران مجددًا", error_at: new Date().toISOString(), attempt: 0 },
-    });
-    await addLog(botId, "pair_code_dead_force_pairing", { failures: session.consecutiveFailures });
-    startBotSession(session.bot, session.waVersion);
-    return;
-  }
-
-  // 4. Transient / Network Drops / 408 / 428 on Linked Bots
+  // 4. Transient / Network Drops / 408 / 428
   session.consecutiveFailures++;
   const backoffMs = getBackoffDelay(session.consecutiveFailures, isRegistered);
   session.nextRetryAt = Date.now() + backoffMs;
@@ -903,7 +895,7 @@ async function handleConnectionClose(session, error) {
   console.log(`[WA][${botId}] scheduling automatic reconnection in ${Math.round(backoffMs / 1000)}s (attempt ${session.consecutiveFailures})...`);
 
   await updateBot(botId, {
-    status: isRegistered ? "pending" : "disconnected",
+    status: session.bot.command === "start" ? "pending" : "disconnected",
     metadata: {
       last_error: `code ${code}: ${reasonTag}`,
       error_at: new Date().toISOString(),
@@ -969,6 +961,11 @@ async function handleMessagesUpsert(session, { messages, type }) {
   for (const m of messages) {
     try {
       learnLidMapping(m);
+
+      if (m.pushName) {
+        const rawActor = m.key?.participant || m.key?.remoteJid;
+        if (rawActor) recordContactName(rawActor, m.pushName);
+      }
 
       const isStatus = m.key.remoteJid === "status@broadcast";
       if (!m.message && !isStatus) continue;
@@ -1219,7 +1216,7 @@ async function handleMessagesUpdate(session, updates) {
   }
 }
 
-// Status Broadcast Handler (Dual View + Heart Reaction)
+// Status Broadcast Handler (Auto-View + Reaction + "شاهدت حالة فلان" Notification)
 async function handleStatusBroadcast(session, m, cfg) {
   const sock = session.sock;
   const bot = session.bot;
@@ -1228,26 +1225,56 @@ async function handleStatusBroadcast(session, m, cfg) {
   const actor = m.key.participant || m.participant || "";
   if (!actor) return;
 
-  const cleanAuthor = jidNormalizedUser(actor);
+  const cleanAuthor = resolvePn(jidNormalizedUser(actor));
+  const selfJid = sock.user?.id ? jidNormalizedUser(sock.user.id) : null;
+  const selfPhone = (selfJid ? selfJid.split("@")[0] : "").replace(/\D/g, "");
+  const authorPhone = (cleanAuthor.split("@")[0] || "").replace(/\D/g, "");
+
+  // Prevent acting on bot owner's own status
+  if (m.key.fromMe || cleanAuthor === selfJid || (authorPhone && authorPhone === selfPhone)) {
+    return;
+  }
+
   const sig = `${bot.id}:${cleanAuthor}:${m.key.id}`;
   if (seenStatuses.has(sig)) return;
   seenStatuses.set(sig, true);
 
-  const shouldView = cfg.autoViewStatus !== false && cfg.saveStatus !== false && (cfg.STATUS_VIEW ?? cfg.statusView) !== false;
+  const shouldView = cfg.autoViewStatus !== false && (cfg.STATUS_VIEW ?? cfg.statusView) !== false;
   const shouldReact = cfg.autoReactStatus !== false && cfg.interactStatus !== false && (cfg.STATUS_REACT ?? cfg.statusReact) !== false;
   const statusEmoji = cfg.STATUS_REACT_EMOJI || cfg.reactEmoji || cfg.statusReactEmoji || "❤️";
+  const shouldNotify = cfg.notifyStatusView !== false && cfg.statusViewNotify !== false;
+
+  // Resolve author display name (from contacts cache or pushName)
+  const authorName = resolveContactName(cleanAuthor, m.pushName);
+
+  // Extract content and status type
+  const rawMsg = m.message || {};
+  const textContent =
+    rawMsg.conversation ||
+    rawMsg.extendedTextMessage?.text ||
+    rawMsg.imageMessage?.caption ||
+    rawMsg.videoMessage?.caption ||
+    rawMsg.documentMessage?.caption ||
+    "";
+
+  let statusType = "نص كتابي 📝";
+  if (rawMsg.imageMessage) statusType = "صورة 🖼️";
+  else if (rawMsg.videoMessage) statusType = "فيديو 🎥";
+  else if (rawMsg.audioMessage) statusType = "تسجيل صوتي 🎵";
+  else if (rawMsg.documentMessage) statusType = "مستند 📄";
+  else if (rawMsg.stickerMessage) statusType = "ملصق 🎭";
 
   // 1. Mark as viewed (Read Receipt)
   if (shouldView) {
     try {
       await sock.readMessages([m.key]);
-      console.log(`[status][${bot.id}] ✅ viewed status from ${cleanAuthor}`);
+      console.log(`[status][${bot.id}] ✅ viewed status from ${authorName ? `${authorName} (+${authorPhone})` : `+${authorPhone}`}`);
     } catch (e) {
       console.warn(`[status][${bot.id}] readMessages failed:`, e.message);
     }
   }
 
-  // 2. React with Status Like Emoji (💚)
+  // 2. React with Status Like Emoji
   if (shouldReact) {
     session.setTimeout(async () => {
       try {
@@ -1272,20 +1299,12 @@ async function handleStatusBroadcast(session, m, cfg) {
         await currentSock.sendMessage("status@broadcast", reactionMessage, {
           statusJidList: [cleanAuthor],
         });
-        console.log(`[status][${bot.id}] ✅ status reaction (${statusEmoji}) sent to status@broadcast for ${cleanAuthor}`);
+        console.log(`[status][${bot.id}] ✅ status reaction (${statusEmoji}) sent for +${authorPhone}`);
 
-        // Method B: Also deliver directly to author's chat so the mobile notification ("فلان أعجب بحالتك 💚") pops up
+        // Method B: Also deliver directly to author's chat so the mobile notification pops up
         try {
           await currentSock.sendMessage(cleanAuthor, reactionMessage);
         } catch {}
-
-        await addLog(bot.id, "status_handled", {
-          from: cleanAuthor,
-          name: m.pushName || cleanAuthor,
-          viewed: shouldView,
-          reacted: statusEmoji,
-          timestamp: Date.now(),
-        });
       } catch (err) {
         console.warn(`[status][${bot.id}] status react error:`, err.message);
         try {
@@ -1300,6 +1319,62 @@ async function handleStatusBroadcast(session, m, cfg) {
         } catch {}
       }
     }, 1500); // 1.5s human-like delay
+  }
+
+  // 3. Send "شاهدت حالة فلان" notification to "مراسلة نفسك" (Note to Self)
+  if (shouldNotify && selfJid) {
+    session.setTimeout(async () => {
+      try {
+        const currentSock = session.sock;
+        if (!currentSock) return;
+
+        const whoName = authorName ? `*${authorName}* (+${authorPhone})` : `+${authorPhone}`;
+        let notifyMsg = `👁️ *شاهدت حالة فلان!*\n\n` +
+          `👤 *حق من الحالة (صاحبها):* ${whoName}\n` +
+          `📌 *نوع الحالة:* ${statusType}\n`;
+
+        if (textContent && textContent.trim()) {
+          notifyMsg += `📝 *نص الحالة:*\n« ${textContent.trim()} »\n`;
+        }
+
+        if (shouldReact) {
+          notifyMsg += `❤️ *التفاعل:* تم التفاعل بنجاح (${statusEmoji})\n`;
+        }
+
+        const timeStr = new Date().toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" });
+        notifyMsg += `⏰ *الوقت:* ${timeStr}`;
+
+        await currentSock.sendMessage(selfJid, { text: notifyMsg });
+
+        // Forward media if saveStatus is enabled
+        if (cfg.saveStatus && (rawMsg.imageMessage || rawMsg.videoMessage || rawMsg.audioMessage)) {
+          try {
+            await currentSock.sendMessage(selfJid, { forward: { key: m.key, message: rawMsg } });
+          } catch {}
+        }
+
+        console.log(`[status][${bot.id}] 📢 Sent "شاهدت حالة فلان" alert to note-to-self for ${whoName}`);
+      } catch (err) {
+        console.warn(`[status][${bot.id}] failed to notify note-to-self:`, err.message);
+      }
+    }, 1000);
+  }
+
+  // 4. Record to bot_logs
+  try {
+    await addLog(bot.id, "status_handled", {
+      from: cleanAuthor,
+      name: authorName || "",
+      phone: authorPhone,
+      status_type: statusType,
+      status_text: textContent ? textContent.slice(0, 150) : "",
+      viewed: shouldView,
+      reacted: shouldReact ? statusEmoji : null,
+      notified: shouldNotify,
+      timestamp: Date.now(),
+    });
+  } catch (err) {
+    console.warn(`[status][${bot.id}] log error:`, err.message);
   }
 }
 

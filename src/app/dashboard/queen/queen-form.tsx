@@ -10,6 +10,7 @@ export default function QueenForm({ botId, initial }: { botId: string; initial: 
   const [selections, setSelections] = useState(initial.selections ?? 3);
   const [recognize, setRecognize] = useState(initial.recognizeStatus ?? true);
   const [interact, setInteract] = useState(initial.interactStatus ?? true);
+  const [notifyStatusView, setNotifyStatusView] = useState(initial.notifyStatusView ?? true);
   const [saveStatus, setSaveStatus] = useState(initial.saveStatus ?? true);
   const [emoji, setEmoji] = useState(initial.reactEmoji ?? "❤️");
   const [workMode, setWorkMode] = useState(initial.workMode ?? "public");
@@ -27,6 +28,7 @@ export default function QueenForm({ botId, initial }: { botId: string; initial: 
         selections,
         recognizeStatus: recognize,
         interactStatus: interact,
+        notifyStatusView,
         saveStatus,
         reactEmoji: emoji,
         workMode,
@@ -80,7 +82,14 @@ export default function QueenForm({ botId, initial }: { botId: string; initial: 
           <input type="checkbox" checked={interact} onChange={(e) => setInteract(e.target.checked)} />
         </label>
         <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-border bg-elevated p-3">
-          <span>حفظ الحالة</span>
+          <div>
+            <span className="font-medium text-sm">إشعار «شاهدت حالة فلان»</span>
+            <p className="text-xs text-muted">إرسال تقرير بصاحب الحالة في مراسلة نفسك</p>
+          </div>
+          <input type="checkbox" checked={notifyStatusView} onChange={(e) => setNotifyStatusView(e.target.checked)} />
+        </label>
+        <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-border bg-elevated p-3">
+          <span>حفظ الحالة (Save Status)</span>
           <input type="checkbox" checked={saveStatus} onChange={(e) => setSaveStatus(e.target.checked)} />
         </label>
         <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-elevated p-3">
