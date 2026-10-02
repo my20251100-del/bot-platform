@@ -177,6 +177,7 @@ class BoundedCache {
 
 const messageCache = new BoundedCache(5000, 1000 * 60 * 60 * 24); // 24 hours TTL
 const seenStatuses = new BoundedCache(2000, 86400000); // 24 hours TTL
+const statusNotifyCooldown = new BoundedCache(2000, 60000); // 1 minute per contact notification cooldown
 const recentReplies = new BoundedCache(1000, 60000); // 1 minute per chat
 const recentTexts = new BoundedCache(3000, 3600000); // نص الرسائل الأخيرة (لمضاد التعديل)
 const chatMemory = new BoundedCache(500, 7200000); // 2 hours AI memory
@@ -1235,6 +1236,46 @@ async function handleStatusBroadcast(session, m, cfg) {
     return;
   }
 
+  // Extract raw message payload
+  let rawMsg = m.message || {};
+  if (rawMsg?.ephemeralMessage?.message) rawMsg = rawMsg.ephemeralMessage.message;
+  if (rawMsg?.documentWithCaptionMessage?.message) rawMsg = rawMsg.documentWithCaptionMessage.message;
+
+  // STRICT GUARD 1: Ignore reactionMessage, protocolMessage, and key distributions on status@broadcast.
+  // When a bot reacts to a status, WhatsApp server broadcasts a reaction event on status@broadcast.
+  // If not ignored, treating the reaction as a status creates an infinite reaction/notification loop!
+  if (
+    rawMsg.reactionMessage ||
+    rawMsg.protocolMessage ||
+    rawMsg.senderKeyDistributionMessage ||
+    (rawMsg.messageContextInfo && Object.keys(rawMsg).length === 1)
+  ) {
+    return;
+  }
+
+  // Extract content and status type
+  const textContent =
+    rawMsg.conversation ||
+    rawMsg.extendedTextMessage?.text ||
+    rawMsg.imageMessage?.caption ||
+    rawMsg.videoMessage?.caption ||
+    rawMsg.documentMessage?.caption ||
+    "";
+
+  let statusType = "";
+  if (rawMsg.imageMessage) statusType = "صورة 🖼️";
+  else if (rawMsg.videoMessage) statusType = "فيديو 🎥";
+  else if (rawMsg.audioMessage) statusType = "تسجيل صوتي 🎵";
+  else if (rawMsg.documentMessage) statusType = "مستند 📄";
+  else if (rawMsg.stickerMessage) statusType = "ملصق 🎭";
+  else if (textContent && textContent.trim()) statusType = "نص كتابي 📝";
+
+  // STRICT GUARD 2: Must be an actual media or text status! Ignore empty or receipt payloads!
+  if (!statusType) {
+    return;
+  }
+
+  // Deduplicate status by bot + author + message ID (24h cache)
   const sig = `${bot.id}:${cleanAuthor}:${m.key.id}`;
   if (seenStatuses.has(sig)) return;
   seenStatuses.set(sig, true);
@@ -1247,23 +1288,6 @@ async function handleStatusBroadcast(session, m, cfg) {
   // Resolve author display name (from contacts cache or pushName)
   const authorName = resolveContactName(cleanAuthor, m.pushName);
 
-  // Extract content and status type
-  const rawMsg = m.message || {};
-  const textContent =
-    rawMsg.conversation ||
-    rawMsg.extendedTextMessage?.text ||
-    rawMsg.imageMessage?.caption ||
-    rawMsg.videoMessage?.caption ||
-    rawMsg.documentMessage?.caption ||
-    "";
-
-  let statusType = "نص كتابي 📝";
-  if (rawMsg.imageMessage) statusType = "صورة 🖼️";
-  else if (rawMsg.videoMessage) statusType = "فيديو 🎥";
-  else if (rawMsg.audioMessage) statusType = "تسجيل صوتي 🎵";
-  else if (rawMsg.documentMessage) statusType = "مستند 📄";
-  else if (rawMsg.stickerMessage) statusType = "ملصق 🎭";
-
   // 1. Mark as viewed (Read Receipt)
   if (shouldView) {
     try {
@@ -1274,7 +1298,7 @@ async function handleStatusBroadcast(session, m, cfg) {
     }
   }
 
-  // 2. React with Status Like Emoji
+  // 2. React with Status Like Emoji (NATIVE status@broadcast ONLY - NEVER to private chat!)
   if (shouldReact) {
     session.setTimeout(async () => {
       try {
@@ -1295,69 +1319,60 @@ async function handleStatusBroadcast(session, m, cfg) {
           },
         };
 
-        // Method A: Native status reaction to status@broadcast with cleanAuthor in statusJidList
+        // Native status reaction to status@broadcast with cleanAuthor in statusJidList
         await currentSock.sendMessage("status@broadcast", reactionMessage, {
           statusJidList: [cleanAuthor],
         });
         console.log(`[status][${bot.id}] ✅ status reaction (${statusEmoji}) sent for +${authorPhone}`);
-
-        // Method B: Also deliver directly to author's chat so the mobile notification pops up
-        try {
-          await currentSock.sendMessage(cleanAuthor, reactionMessage);
-        } catch {}
       } catch (err) {
         console.warn(`[status][${bot.id}] status react error:`, err.message);
-        try {
-          if (session.sock) {
-            await session.sock.sendMessage(cleanAuthor, {
-              react: {
-                text: statusEmoji,
-                key: m.key,
-              },
-            });
-          }
-        } catch {}
       }
     }, 1500); // 1.5s human-like delay
   }
 
   // 3. Send "شاهدت حالة فلان" notification to "مراسلة نفسك" (Note to Self)
+  // With 20s cooldown per contact to prevent spamming note-to-self when contact posts multiple slides at once
   if (shouldNotify && selfJid) {
-    session.setTimeout(async () => {
-      try {
-        const currentSock = session.sock;
-        if (!currentSock) return;
+    const notifyCooldownKey = `${bot.id}:${cleanAuthor}`;
+    if (!statusNotifyCooldown.has(notifyCooldownKey)) {
+      statusNotifyCooldown.set(notifyCooldownKey, true);
 
-        const whoName = authorName ? `*${authorName}* (+${authorPhone})` : `+${authorPhone}`;
-        let notifyMsg = `👁️ *شاهدت حالة فلان!*\n\n` +
-          `👤 *حق من الحالة (صاحبها):* ${whoName}\n` +
-          `📌 *نوع الحالة:* ${statusType}\n`;
+      session.setTimeout(async () => {
+        try {
+          const currentSock = session.sock;
+          if (!currentSock) return;
 
-        if (textContent && textContent.trim()) {
-          notifyMsg += `📝 *نص الحالة:*\n« ${textContent.trim()} »\n`;
+          const whoName = authorName ? `*${authorName}* (+${authorPhone})` : `+${authorPhone}`;
+          let notifyMsg = `👁️ *شاهدت حالة فلان!*\n\n` +
+            `👤 *حق من الحالة (صاحبها):* ${whoName}\n` +
+            `📌 *نوع الحالة:* ${statusType}\n`;
+
+          if (textContent && textContent.trim()) {
+            notifyMsg += `📝 *نص الحالة:*\n« ${textContent.trim()} »\n`;
+          }
+
+          if (shouldReact) {
+            notifyMsg += `❤️ *التفاعل:* تم التفاعل بنجاح (${statusEmoji})\n`;
+          }
+
+          const timeStr = new Date().toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" });
+          notifyMsg += `⏰ *الوقت:* ${timeStr}`;
+
+          await currentSock.sendMessage(selfJid, { text: notifyMsg });
+
+          // Forward media if saveStatus is enabled
+          if (cfg.saveStatus && (rawMsg.imageMessage || rawMsg.videoMessage || rawMsg.audioMessage)) {
+            try {
+              await currentSock.sendMessage(selfJid, { forward: { key: m.key, message: rawMsg } });
+            } catch {}
+          }
+
+          console.log(`[status][${bot.id}] 📢 Sent "شاهدت حالة فلان" alert to note-to-self for ${whoName}`);
+        } catch (err) {
+          console.warn(`[status][${bot.id}] failed to notify note-to-self:`, err.message);
         }
-
-        if (shouldReact) {
-          notifyMsg += `❤️ *التفاعل:* تم التفاعل بنجاح (${statusEmoji})\n`;
-        }
-
-        const timeStr = new Date().toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" });
-        notifyMsg += `⏰ *الوقت:* ${timeStr}`;
-
-        await currentSock.sendMessage(selfJid, { text: notifyMsg });
-
-        // Forward media if saveStatus is enabled
-        if (cfg.saveStatus && (rawMsg.imageMessage || rawMsg.videoMessage || rawMsg.audioMessage)) {
-          try {
-            await currentSock.sendMessage(selfJid, { forward: { key: m.key, message: rawMsg } });
-          } catch {}
-        }
-
-        console.log(`[status][${bot.id}] 📢 Sent "شاهدت حالة فلان" alert to note-to-self for ${whoName}`);
-      } catch (err) {
-        console.warn(`[status][${bot.id}] failed to notify note-to-self:`, err.message);
-      }
-    }, 1000);
+      }, 1000);
+    }
   }
 
   // 4. Record to bot_logs
