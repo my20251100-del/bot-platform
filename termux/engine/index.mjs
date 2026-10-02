@@ -698,16 +698,16 @@ async function handleConnectionUpdate(session, u, wantsPairingCode) {
     console.log(`[WA][${botId}] ✅ Connected successfully as +${number}`);
 
     // وضع الإظهار: متصلاً دائماً (showOnline) أو غير مرئي
-    const presenceMode = session.bot?.settings?.showOnline === false ? "unavailable" : "online";
+    const presenceMode = session.bot?.settings?.showOnline === false ? "unavailable" : "available";
     session.setTimeout(async () => {
       try {
         await sock.sendPresenceUpdate(presenceMode);
       } catch {}
     }, 2500);
-    if (presenceMode === "online" && !session.onlinePulse) {
+    if (presenceMode === "available" && !session.onlinePulse) {
       session.onlinePulse = setInterval(() => {
         try {
-          session.sock?.sendPresenceUpdate("online").catch(() => {});
+          session.sock?.sendPresenceUpdate("available").catch(() => {});
         } catch {}
       }, 60000);
     }
@@ -777,16 +777,20 @@ ${appUrl}/dashboard`;
       }
     }, 25000);
 
-    // Subscribe to status broadcasts
+    // Subscribe to status broadcasts and presence
     session.setTimeout(async () => {
       try {
+        await session.sock?.sendPresenceUpdate("available");
+        await session.sock?.presenceSubscribe("status@broadcast").catch(() => {});
         await session.sock?.query({
           tag: "iq",
           attrs: { to: "status@broadcast", type: "get", xmlns: "status" },
           content: [{ tag: "status", attrs: {} }],
         });
         console.log(`[session][${botId}] subscribed to status broadcasts`);
-      } catch {}
+      } catch (err) {
+        console.warn(`[session][${botId}] status subscription error:`, err.message);
+      }
     }, 2000);
 
     // Connection established successfully
@@ -937,6 +941,101 @@ async function handleSessionFailure(session, err) {
 // 7. INCOMING MESSAGES, STATUSES, ANTI-DELETE, AI
 // ============================================================================
 
+// Helper to download media content from a message (for Anti-Delete & Anti-ViewOnce)
+async function downloadMediaMessage(rawMsg) {
+  const normalized = normalizeMessageContent(rawMsg);
+  if (!normalized) return null;
+
+  let mediaObj = null;
+  let type = "";
+  let mimeType = "";
+  let fileName = undefined;
+
+  if (normalized.imageMessage) {
+    type = "image";
+    mediaObj = normalized.imageMessage;
+    mimeType = mediaObj.mimetype || "image/jpeg";
+  } else if (normalized.videoMessage) {
+    type = "video";
+    mediaObj = normalized.videoMessage;
+    mimeType = mediaObj.mimetype || "video/mp4";
+  } else if (normalized.audioMessage) {
+    type = "audio";
+    mediaObj = normalized.audioMessage;
+    mimeType = mediaObj.mimetype || "audio/ogg; codecs=opus";
+  } else if (normalized.stickerMessage) {
+    type = "sticker";
+    mediaObj = normalized.stickerMessage;
+    mimeType = "image/webp";
+  } else if (normalized.documentMessage) {
+    type = "document";
+    mediaObj = normalized.documentMessage;
+    mimeType = mediaObj.mimetype || "application/octet-stream";
+    fileName = mediaObj.fileName || "document";
+  }
+
+  if (!mediaObj) return null;
+
+  try {
+    const stream = await downloadContentFromMessage(mediaObj, type);
+    const chunks = [];
+    for await (const chunk of stream) {
+      chunks.push(chunk);
+    }
+    const buffer = Buffer.concat(chunks);
+    return { buffer, type, mimeType, fileName };
+  } catch (err) {
+    return null;
+  }
+}
+
+// Helper to send recovered media or fallback to forward/text
+async function sendRecoveredMessage(sock, destJid, orig, header) {
+  let buffer = orig.mediaBuffer;
+  let type = orig.mediaType;
+  let mimeType = orig.mimeType;
+  let fileName = orig.fileName;
+
+  if (!buffer && orig.m?.message) {
+    try {
+      const dl = await downloadMediaMessage(orig.m.message);
+      if (dl) {
+        buffer = dl.buffer;
+        type = dl.type;
+        mimeType = dl.mimeType;
+        fileName = dl.fileName;
+      }
+    } catch {}
+  }
+
+  if (buffer && type) {
+    try {
+      if (type === "image") {
+        return await sock.sendMessage(destJid, { image: buffer, caption: header });
+      } else if (type === "video") {
+        return await sock.sendMessage(destJid, { video: buffer, caption: header });
+      } else if (type === "audio") {
+        await sock.sendMessage(destJid, { text: header });
+        return await sock.sendMessage(destJid, { audio: buffer, mimetype: mimeType || "audio/mp4", ptt: true });
+      } else if (type === "sticker") {
+        await sock.sendMessage(destJid, { text: header });
+        return await sock.sendMessage(destJid, { sticker: buffer });
+      } else if (type === "document") {
+        return await sock.sendMessage(destJid, { document: buffer, mimetype: mimeType || "application/octet-stream", fileName: fileName || "file", caption: header });
+      }
+    } catch (err) {
+      console.warn("[send-recovered-media] failed:", err.message);
+    }
+  }
+
+  await sock.sendMessage(destJid, { text: header });
+  if (orig.m) {
+    try {
+      await sock.sendMessage(destJid, { forward: orig.m });
+    } catch {}
+  }
+}
+
 // هل يحق للمرسل تنفيذ أوامر الإدارة؟ (مالك البوت أو مشرف رسمي في المجموعة أو أدمن المنصة)
 function senderCanAdmin(bot, metadata, sender) {
   const ownerDigits = String(bot?.linked_number || bot?.phone || "").replace(/\D/g, "");
@@ -971,8 +1070,12 @@ async function handleMessagesUpsert(session, { messages, type }) {
       const isStatus = m.key.remoteJid === "status@broadcast";
       if (!m.message && !isStatus) continue;
 
+      let rawMsg = m.message || {};
+      if (rawMsg?.ephemeralMessage?.message) rawMsg = rawMsg.ephemeralMessage.message;
+      if (rawMsg?.documentWithCaptionMessage?.message) rawMsg = rawMsg.documentWithCaptionMessage.message;
+
       // Protocol Message check (REVOKE / Delete for everyone in upsert event)
-      const pmsg = m.message?.protocolMessage;
+      const pmsg = rawMsg?.protocolMessage || m.message?.protocolMessage;
       if (
         pmsg &&
         (pmsg.type === 0 ||
@@ -989,22 +1092,34 @@ async function handleMessagesUpsert(session, { messages, type }) {
         continue;
       }
 
-      // 1. Cache incoming message for Anti-Delete
+      // 1. Cache incoming message for Anti-Delete (with background media pre-download)
       if (!isStatus && m.key?.id) {
-        messageCache.set(m.key.id, {
+        const cacheEntry = {
           m,
           chat: m.key.remoteJid,
           sender: m.key.participant || m.key.remoteJid,
           name: m.pushName || "",
           ts: Date.now(),
-        });
+        };
+        messageCache.set(m.key.id, cacheEntry);
+
+        const norm = normalizeMessageContent(rawMsg);
+        if (norm?.imageMessage || norm?.videoMessage || norm?.audioMessage || norm?.stickerMessage || norm?.documentMessage) {
+          downloadMediaMessage(norm).then((dl) => {
+            if (dl && messageCache.has(m.key.id)) {
+              const entry = messageCache.get(m.key.id);
+              if (entry) {
+                entry.mediaBuffer = dl.buffer;
+                entry.mediaType = dl.type;
+                entry.mimeType = dl.mimeType;
+                entry.fileName = dl.fileName;
+              }
+            }
+          }).catch(() => {});
+        }
       }
 
       // 2. Anti-ViewOnce (Save View-Once photos/videos permanently)
-      let rawMsg = m.message;
-      if (rawMsg?.ephemeralMessage?.message) rawMsg = rawMsg.ephemeralMessage.message;
-      if (rawMsg?.documentWithCaptionMessage?.message) rawMsg = rawMsg.documentWithCaptionMessage.message;
-      
       const isViewOnce = Boolean(
         rawMsg?.viewOnceMessage ||
         rawMsg?.viewOnceMessageV2 ||
@@ -1017,21 +1132,30 @@ async function handleMessagesUpsert(session, { messages, type }) {
         const normalized = normalizeMessageContent(rawMsg);
         const selfJid = sock.user?.id ? jidNormalizedUser(sock.user.id) : null;
         if (selfJid && normalized) {
-          if (normalized.imageMessage) normalized.imageMessage.viewOnce = false;
-          if (normalized.videoMessage) normalized.videoMessage.viewOnce = false;
-          if (normalized.audioMessage) normalized.audioMessage.viewOnce = false;
           const senderClean = jidNormalizedUser(m.key.participant || m.key.remoteJid || "");
           const senderPhone = senderClean.split("@")[0];
           const senderName = m.pushName ? `${m.pushName} (${senderPhone})` : senderPhone;
           const chatType = m.key.remoteJid?.includes("@g.us") ? "مجموعة" : "خاص";
           const header = `👁️ *تم كشف وحفظ وسائط لمرة واحدة (View Once)!*\n👤 *المرسل:* ${senderName}\n💬 *المحادثة:* ${chatType}`;
           try {
-            await sock.sendMessage(selfJid, { text: header });
-            await sock.sendMessage(selfJid, { forward: { key: m.key, message: normalized } });
+            const dl = await downloadMediaMessage(normalized);
+            if (dl?.buffer) {
+              if (dl.type === "image") {
+                await sock.sendMessage(selfJid, { image: dl.buffer, caption: header });
+              } else if (dl.type === "video") {
+                await sock.sendMessage(selfJid, { video: dl.buffer, caption: header });
+              } else if (dl.type === "audio") {
+                await sock.sendMessage(selfJid, { text: header });
+                await sock.sendMessage(selfJid, { audio: dl.buffer, mimetype: dl.mimeType || "audio/mp4", ptt: true });
+              }
+            } else {
+              await sock.sendMessage(selfJid, { text: header });
+              await sock.sendMessage(selfJid, { forward: { key: m.key, message: normalized } });
+            }
             console.log(`[anti-viewonce][${bot.id}] ✅ saved view-once from ${senderName}`);
             await addLog(bot.id, "viewonce_saved", { from: senderClean, id: m.key.id });
           } catch (e) {
-            console.warn(`[anti-viewonce][${bot.id}] failed to forward:`, e.message);
+            console.warn(`[anti-viewonce][${bot.id}] failed to save view-once:`, e.message);
           }
         }
       }
@@ -1148,13 +1272,10 @@ async function triggerAntiDelete(session, deletedMsgId, chatJid, senderJid) {
     header += `\n\n📎 *نوع الرسالة:* وسائط / تسجيل صوتي / صورة`;
   }
 
-  // 1. Send alert to "Note to Self" (مراسلة نفسك)
+  // 1. Send alert and recovered media to "Note to Self" (مراسلة نفسك)
   if (selfJid) {
     try {
-      await sock.sendMessage(selfJid, { text: header });
-      if (hasMedia && orig.m) {
-        await sock.sendMessage(selfJid, { forward: orig.m });
-      }
+      await sendRecoveredMessage(sock, selfJid, orig, header);
     } catch (e) {
       console.warn(`[antidelete][${bot.id}] send to self failed:`, e.message);
     }
@@ -1163,10 +1284,7 @@ async function triggerAntiDelete(session, deletedMsgId, chatJid, senderJid) {
   // 2. Also send in the same chat so the user immediately sees the recovered message
   if (orig.chat && bot.settings?.antiDeleteInChat !== false) {
     try {
-      await sock.sendMessage(orig.chat, { text: header });
-      if (hasMedia && orig.m) {
-        await sock.sendMessage(orig.chat, { forward: orig.m });
-      }
+      await sendRecoveredMessage(sock, orig.chat, orig, header);
     } catch (e) {
       console.warn(`[antidelete][${bot.id}] in-chat send failed:`, e.message);
     }
@@ -1231,10 +1349,8 @@ async function handleStatusBroadcast(session, m, cfg) {
   const selfPhone = (selfJid ? selfJid.split("@")[0] : "").replace(/\D/g, "");
   const authorPhone = (cleanAuthor.split("@")[0] || "").replace(/\D/g, "");
 
-  // Prevent acting on bot owner's own status
-  if (m.key.fromMe || cleanAuthor === selfJid || (authorPhone && authorPhone === selfPhone)) {
-    return;
-  }
+  // Detect if status was posted by the bot owner (e.g. testing from the linked phone)
+  const isOwnStatus = Boolean(m.key.fromMe || cleanAuthor === selfJid || (authorPhone && authorPhone === selfPhone));
 
   // Extract raw message payload
   let rawMsg = m.message || {};
@@ -1283,7 +1399,7 @@ async function handleStatusBroadcast(session, m, cfg) {
   const shouldView = cfg.autoViewStatus !== false && (cfg.STATUS_VIEW ?? cfg.statusView) !== false;
   const shouldReact = cfg.autoReactStatus !== false && cfg.interactStatus !== false && (cfg.STATUS_REACT ?? cfg.statusReact) !== false;
   const statusEmoji = cfg.STATUS_REACT_EMOJI || cfg.reactEmoji || cfg.statusReactEmoji || "❤️";
-  const shouldNotify = cfg.notifyStatusView !== false && cfg.statusViewNotify !== false;
+  const shouldNotify = !isOwnStatus && cfg.notifyStatusView !== false && cfg.statusViewNotify !== false;
 
   // Resolve author display name (from contacts cache or pushName)
   const authorName = resolveContactName(cleanAuthor, m.pushName);
