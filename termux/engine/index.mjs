@@ -526,7 +526,7 @@ async function startBotSession(bot, waVersion, opts = {}) {
       logger,
       printQRInTerminal: false,
       markOnlineOnConnect: true,
-      qrTimeout: 180000,
+      qrTimeout: 360000,
       browser: Browsers.macOS("Safari"),
       syncFullHistory: false,
       defaultQueryTimeoutMs: 120000,
@@ -844,10 +844,10 @@ async function handleConnectionClose(session, error) {
     return;
   }
 
-  // 2. Unregistered Pairing Expired (only when TTL > 180s has passed without pairing)
+  // 2. Unregistered Pairing Expired (only when TTL > 360s has passed without pairing)
   const pairingAge = Date.now() - (session.pairingRequestedAt || 0);
-  if (!isRegistered && session.pairingCode && pairingAge > 180000) {
-    console.log(`[WA][${botId}] ⏳ Pairing code TTL exceeded (>180s). Resetting auth for fresh pairing...`);
+  if (!isRegistered && session.pairingCode && pairingAge > 360000) {
+    console.log(`[WA][${botId}] ⏳ Pairing code TTL exceeded (>360s). Resetting auth for fresh pairing...`);
     await session.destroy("pairing_expired");
     activeSessions.delete(botId);
 
@@ -862,7 +862,7 @@ async function handleConnectionClose(session, error) {
       status: "pending",
       pair_code: null,
       qr: null,
-      metadata: { last_error: "انتهت صلاحية كود الاقتران (180 ثانية)، جارٍ التجديد...", error_at: new Date().toISOString() },
+      metadata: { last_error: "انتهت صلاحية كود الاقتران (6 دقائق)، جارٍ التجديد...", error_at: new Date().toISOString() },
     });
     await addLog(botId, "pairing_expired", { code, pairingAge });
     return;
@@ -1917,11 +1917,10 @@ async function reconcileBots(waVersion) {
     const activePhoneSet = new Set();
 
     for (const bot of bots || []) {
-      if (process.env.BOT_FILTER && bot.id !== process.env.BOT_FILTER) continue;
       const activeSession = activeSessions.get(bot.id);
 
       // Handle STOP command
-      if (bot.command === "stop" && process.env.BOT_FILTER !== bot.id) {
+      if (bot.command === "stop") {
         if (activeSession) {
           await activeSession.destroy("command_stop");
           activeSessions.delete(bot.id);
@@ -1943,7 +1942,7 @@ async function reconcileBots(waVersion) {
       }
 
       // Handle START command
-      if (bot.command === "start" || process.env.BOT_FILTER === bot.id) {
+      if (bot.command === "start") {
         // Prevent duplicate bots targeting the same phone number
         const digits = (bot.phone || bot.linked_number || "").replace(/\D/g, "");
         if (digits) {
@@ -2173,6 +2172,14 @@ process.on("unhandledRejection", (reason) => {
 // 10. MAIN ENGINE BOOTSTRAP
 // ============================================================================
 async function main() {
+  if (process.env.DISABLE_LOCAL_ENGINE === "true" || process.env.DISABLE_ENGINE === "true") {
+    console.log("[engine] ⏸️ Engine is disabled on this local machine (DISABLE_LOCAL_ENGINE=true) because production engine is running on Railway/Cloud.");
+    while (!shutdownRequested) {
+      await new Promise((r) => setTimeout(r, 60000));
+    }
+    return;
+  }
+
   console.log("============================================================================");
   console.log("  🚀 Starting Bot Platform 24/7 Resilient Engine (Baileys + Supabase)");
   console.log("============================================================================");

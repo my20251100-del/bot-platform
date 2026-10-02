@@ -25,7 +25,7 @@ const statusLabels: Record<string, string> = {
   failed: "فشل الاتصال",
 };
 
-const LINK_TIMEOUT_MS = 180_000;
+const LINK_TIMEOUT_MS = 360_000;
 
 export default function ConnectPage() {
   const [number, setNumber] = useState(() => {
@@ -43,7 +43,7 @@ export default function ConnectPage() {
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [copiedSecret, setCopiedSecret] = useState(false);
-  const [countdown, setCountdown] = useState(120);
+  const [countdown, setCountdown] = useState(300);
   const [connectToken, setConnectToken] = useState<string | null>(() => {
     if (typeof window !== "undefined") {
       const sp = new URLSearchParams(window.location.search);
@@ -154,7 +154,7 @@ export default function ConnectPage() {
 
     setError(null);
     setLoading(true);
-    setCountdown(120);
+    setCountdown(300);
 
     try {
       const token = getToken(cleanNumber);

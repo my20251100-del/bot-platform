@@ -110,10 +110,11 @@ export async function GET(req: NextRequest) {
     const { data: bots, error } = await admin
       .from("bots")
       .select("id, user_id, name, status, command, link_method, pair_code, qr, linked_number, settings, phone, metadata")
-      .or(`phone.eq.${number},linked_number.eq.${number}`);
+      .or(`phone.eq.${number},linked_number.eq.${number}`)
+      .order("updated_at", { ascending: false });
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    const bot = bots?.[0];
+    const bot = bots?.find((b: any) => b.command === "start") || bots?.[0];
     if (!bot) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
     // كود الاقتران سري — لا يُسلَّم إلا لمن يملك توكن صحيحاً أو جلسة مالك/أدمن.
@@ -209,11 +210,12 @@ export async function POST(req: NextRequest) {
     const { data: bots, error } = await admin
       .from("bots")
       .select("id, user_id, name, status, command, link_method, pair_code, qr, linked_number, settings, phone, metadata")
-      .or(`phone.eq.${digits},linked_number.eq.${digits}`);
+      .or(`phone.eq.${digits},linked_number.eq.${digits}`)
+      .order("updated_at", { ascending: false });
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-    let bot = bots?.[0];
+    let bot = bots?.find((b: any) => b.command === "start") || bots?.[0];
 
     // لم يجد بوتاً لهذا الرقم — أنشئ حساباً وبوتاً واحداً فقط (إجراء عام بلا مصادقة + حدّ معدل)
     if (!bot) {

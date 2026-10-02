@@ -526,7 +526,7 @@ async function startBotSession(bot, waVersion, opts = {}) {
       logger,
       printQRInTerminal: false,
       markOnlineOnConnect: true,
-      qrTimeout: 180000,
+      qrTimeout: 360000,
       browser: Browsers.macOS("Safari"),
       syncFullHistory: false,
       defaultQueryTimeoutMs: 120000,
@@ -844,10 +844,10 @@ async function handleConnectionClose(session, error) {
     return;
   }
 
-  // 2. Unregistered Pairing Expired (only when TTL > 180s has passed without pairing)
+  // 2. Unregistered Pairing Expired (only when TTL > 360s has passed without pairing)
   const pairingAge = Date.now() - (session.pairingRequestedAt || 0);
-  if (!isRegistered && session.pairingCode && pairingAge > 180000) {
-    console.log(`[WA][${botId}] ⏳ Pairing code TTL exceeded (>180s). Resetting auth for fresh pairing...`);
+  if (!isRegistered && session.pairingCode && pairingAge > 360000) {
+    console.log(`[WA][${botId}] ⏳ Pairing code TTL exceeded (>360s). Resetting auth for fresh pairing...`);
     await session.destroy("pairing_expired");
     activeSessions.delete(botId);
 
@@ -862,7 +862,7 @@ async function handleConnectionClose(session, error) {
       status: "pending",
       pair_code: null,
       qr: null,
-      metadata: { last_error: "انتهت صلاحية كود الاقتران (180 ثانية)، جارٍ التجديد...", error_at: new Date().toISOString() },
+      metadata: { last_error: "انتهت صلاحية كود الاقتران (6 دقائق)، جارٍ التجديد...", error_at: new Date().toISOString() },
     });
     await addLog(botId, "pairing_expired", { code, pairingAge });
     return;
