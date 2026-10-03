@@ -1726,6 +1726,12 @@ async function handleChatMessage(session, m, cfg) {
     }
   }
 
+  // ⛔ CRITICAL: STRICTLY FORBID AI & AUTO-REPLIES IN ALL GROUPS!
+  // In groups, the bot ONLY executes explicit commands (.مشرف, .مجموعاتي, etc.)
+  if (isGroup && !isCommand) {
+    return;
+  }
+
   const mediaLabel = norm?.imageMessage ? "[صورة 🖼️]" : norm?.audioMessage ? "[تسجيل صوتي 🎵]" : norm?.stickerMessage ? "[ملصق 🎭]" : norm?.videoMessage ? "[فيديو 🎥]" : "";
   console.log(`[chat-msg][${bot.id}] from ${sender} (${isGroup ? "group" : "private"}): "${(text || mediaLabel).slice(0, 45)}"`);
 
@@ -2087,14 +2093,20 @@ async function generateAIResponse(userText, senderName, cfg, mediaData = null) {
   }
 
   const smartPersonaPrompt =
-    "أنت صاحب هذا الرقم شخصياً. أنت إنسان ذكي جداً، لماح، وسريع البديهة. تفهم المقصد بدقة.\n" +
-    "- ردك مختصر وواثق وحكيم، في الصميم دون مقدمات مفرطة.\n" +
-    "- تتحدث بعفوية وبلهجة عربية طبيعية وسلسة كشخص واعي في واتساب.";
+    "أنت صاحب هذا الرقم وممثل \"متجر أثر\" (أثر للعطور والبخور والمخلطات الفاخرة).\n" +
+    "- اسمك وهويتك: أنت \"متجر أثر\" أو صاحب متجر أثر (الأخ حاتم). لست \"مكنون\" أبداً ولا تذكر اسم مكنون كنفسك إطلاقاً.\n" +
+    "- إذا راسلك زبون أو شخص يسأل عن العطور، الأسعار، الروائح، البخور، أو المنتجات: تعامل كخبير عطور ذكي ومضياف، واقترح عليه أفخم العطور والروائح المناسبة لذوقه من متجر أثر، ووضح له الجودة والفوحان والثبات العالي.\n" +
+    "- إذا راسلك صاحبك أو صديق أو شخص يسلم ويدردش بأمور عادية أو شخصية: رد عليه كصاحبه الشخصي بعفوية وأخوّة ولهجة يمنية/عربية طيبة وودودة وخفيفة دم (مثل: \"يا هلا والله بالغالي\"، \"حياك ربي\"، \"أبشر بعزك\")، دون رسميات مفرطة ولا كلام روبوتي.\n" +
+    "- إذا سأل أحد: \"أنت أثر أو مكنون؟\" أو \"من أنت؟\": وضح له بلباقة: \"أنا متجر أثر للعطور يا غالي، حياك الله، آمرني وش في خاطرك؟\".\n" +
+    "- ردك مختصر وواثق وفي الصميم كشخص حقيقي في واتساب دون مقدمات طويلة ولا كلام مكرر.";
 
   const customPrompt = String(cfg.systemPrompt || cfg.geminiSystemPrompt || cfg.SYSTEM_PROMPT || "").trim();
-  const systemPrompt = customPrompt
-    ? `${customPrompt}\n\n${lengthInstruction}${senderName ? `\nاسم المتحدث: ${senderName}` : ""}`
-    : `${smartPersonaPrompt}\n\n${lengthInstruction}${senderName ? `\nاسم المتحدث: ${senderName}` : ""}`;
+  const activePrompt = (!customPrompt || customPrompt.includes("هكر") || customPrompt.includes("اختراق"))
+    ? smartPersonaPrompt
+    : customPrompt;
+
+  const senderContext = senderName ? `\n(الطرف الذي يراسلك في واتساب اسمه: ${senderName} - وأنت تتحدث معه بصفتك صاحب متجر أثر)` : "";
+  const systemPrompt = `${activePrompt}\n\n${lengthInstruction}${senderContext}`;
 
   // Build multimodal parts (media + text prompt)
   const userParts = [];
