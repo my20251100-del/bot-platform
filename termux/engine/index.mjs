@@ -1988,7 +1988,7 @@ if (!botIsAdmin) {
         }
       }
 
-      const reply = await generateAIResponse(text, m.pushName || "", cfg, mediaData);
+      const reply = await generateAIResponse(text, m.pushName || "", cfg, mediaData, chatLimitKey);
       if (reply && session.sock) {
         history.push(now);
         recentReplies.set(chatLimitKey, history);
@@ -2025,7 +2025,7 @@ if (!botIsAdmin) {
 }
 
 // AI Response Generator (Gemini Multimodal with multi-key rotation and active 2026 models)
-async function generateAIResponse(userText, senderName, cfg, mediaData = null) {
+async function generateAIResponse(userText, senderName, cfg, mediaData = null, chatKey = null) {
   const candidateKeys = [];
 
   // 1. cfg.geminiApiKeys (from settings page: mapped from GEMINI_API_KYES -> geminiApiKeys in DB)
@@ -2075,7 +2075,7 @@ async function generateAIResponse(userText, senderName, cfg, mediaData = null) {
   if (mediaData && !messageText) {
     if (mediaData.type === "sticker") {
       targetMaxTokens = 20;
-      lengthInstruction = "توجيه: المستخدم أرسل ملصق. رد عليه فقط بإيموجي أو ضحكة عفوية قصيرة جداً (كلمة أو كلمتين مثل 😂😂 أو هههههه منور يا غالي). ممنوع وصف الملصق نهائياً.";
+      lengthInstruction = "توجيه: المستخدم أرسل ملصق. تفاعل معه فقط بضحكة أو إيموجي (مثل 😂😂 أو هههههه). ممنوع وصف الملصق نهائياً.";
     } else if (mediaData.type === "audio") {
       targetMaxTokens = 80;
       lengthInstruction = "توجيه: المستخدم أرسل تسجيل صوتي. استمع إليه ورد عليه مباشرة في الصميم بسطر واحد بلهجة عفوية كشخص يراسل بالجوال.";
@@ -2084,13 +2084,13 @@ async function generateAIResponse(userText, senderName, cfg, mediaData = null) {
       lengthInstruction = "توجيه: المستخدم أرسل صورة. تفاعل معها بتعليق سريع ومختصر بسطر واحد كأي شخص يشوف صورة في واتساب بدون فلسفة.";
     }
   } else if (messageWordCount <= 2) {
-    targetMaxTokens = 20;
-    lengthInstruction = "توجيه: الرسالة قصيرة جداً (كلمة أو كلمتين). طابقها ورد بكلمتين أو ثلاث كلمات فقط كأي شخص يكتب بالجوال (مثل: 'هلا والله يا غالي'، 'أهلين حياك'). ممنوع التطويل نهائياً.";
+    targetMaxTokens = 25;
+    lengthInstruction = "توجيه: الرسالة قصيرة جداً (كلمة أو كلمتين). طابقها ورد بكلمتين أو ثلاث كلمات فقط كأي شخص يكتب بالجوال. ممنوع التطويل نهائياً وممنوع تكرار نفس التحية إذا سبق ورحبت به.";
   } else if (messageWordCount <= 6) {
-    targetMaxTokens = 40;
+    targetMaxTokens = 45;
     lengthInstruction = "توجيه: رسالة قصيرة. رد بسطر واحد مختصر وعفوي ومباشر بدون مقدمات وبدون تكلف كشخص يكتب من جواله.";
   } else if (!isAskingDetail) {
-    targetMaxTokens = 75;
+    targetMaxTokens = 80;
     lengthInstruction = "توجيه: رد باختصار بسطر أو سطرين فقط كدردشة واتساب طبيعية وعفوية، بدون نقاط ولا تعداد.";
   } else {
     targetMaxTokens = 150;
@@ -2098,19 +2098,22 @@ async function generateAIResponse(userText, senderName, cfg, mediaData = null) {
   }
 
   const smartPersonaPrompt =
-    "أنت صاحب هذا الواتساب شخصياً (الأخ حاتم / صاحب متجر أثر للعطور والبخور والمخلطات).\n" +
-    "أنت الآن تكتب بالجوال وترد على الواتساب بنفسك كإنسان طبيعي 100%، ولا يبين أبداً أنك ذكاء اصطناعي أو بوت أو خدمة عملاء رسمية.\n\n" +
-    "قواعد الدردشة في واتساب:\n" +
-    "1. طابق حجم ردك مع رسالة الشخص تماماً:\n" +
-    "   - رسالة قصيرة جداً أو تحية (مثل: هلا، H، سلام) = رد بكلمة أو كلمتين إلى 4 كلمات فقط (مثل: \"هلا والله يا غالي\"، \"أهلين حياك\").\n" +
-    "   - ملصق (Sticker) = رد فقط بضحكة أو إيموجي مثل (\"😂😂\" أو \"هههههه حياك\") بدون وصف للملصق إطلاقاً.\n" +
-    "   - سؤال عن العطور/المتجر = رد كصاحب متجر مرحب بأسلوب بسيط وسريع ومختصر بسطر واحد (مثل: \"يا مرحبا، موجود عندنا تشكيلة عطور وبخور فاخرة وثباتها عالي، وش اللي ببالك؟\").\n" +
-    "   - سوالف عادية أو صاحبك يسلم = رد عليه كأخ وصاحب بعفوية ولهجة يمنية لطيفة (مثل: \"يا هلا والله بالغالي، بخير الحمدلله بشرني عنك\").\n" +
-    "2. ممنوعات صارمة:\n" +
-    "   - ممنوع مناداة الشخص باسم حسابه أو وضعه بين أقواس تنصيص (مثل \"يا مكنون\").\n" +
-    "   - ممنوع إطلاقاً وصف الملصقات أو تحليل الصور بشكل روبوتي.\n" +
-    "   - ممنوع التعداد النقطي (1. 2. 3.) أو وضع نجمات وعلامات تنسيق مقالية أو إطالة الكلام.\n" +
-    "   - إذا سألك أحد \"أنت أثر أو مكنون؟\" أو \"من أنت؟\": قل ببساطة وبلهجة عادية: \"أنا صاحب متجر أثر يا غالي، حياك الله، وش في خاطرك؟\".";
+    "أنت محمد، صاحب هذا الواتساب شخصياً وصاحب \"متجر أثر للعطور والبخور والمخلطات\".\n" +
+    "أنت تكتب بالجوال وترد على محادثاتك في واتساب بنفسك كإنسان حقيقي 100%، ولست بوتاً أو رداً آلياً.\n\n" +
+    "قواعد صارمة لتبدو كإنسان طبيعي تماماً وتتجنب التكرار:\n" +
+    "1. هويتك: اسمك \"محمد\"، ومتجرك هو \"متجر أثر للعطور\". إذا سألك أحد \"معي محمد؟\" أو \"أنت محمد؟\" أو \"من معي؟\"، جاوب فوراً بوضوح وطبيعية: \"اي نعم معك محمد، تفضل\" أو \"ايوه تفضل حياك\".\n" +
+    "2. كسر التكرار والأسطوانة الدوارة (مهم جداً جداً جداً):\n" +
+    "   - ممنوع إطلاقاً تكرار لازمة \"يا غالي\" في كل رسالة! احذف الألقاب نهائياً وتحدث بأسلوب مباشر ومتنوع كأي شخص عادي يكتب لأصحابه وزبائنه.\n" +
+    "   - ممنوع إعادة الترحيب (\"هلا والله\" أو \"حياك\") في نص المحادثة إذا كنت قد رحبت به من قبل! ادخل في صلب الموضوع مباشرة.\n" +
+    "   - إذا أرسل الشخص كلاماً غير مفهوم، ملخبط، أو خطأ إملائي (مثل: \"هرش لهب\"، \"ايش فيط\"): لا ترحب به ولا تقل له \"يا غالي\"! رد عليه بعفوية واستفهام: \"وش تقصد؟\" أو \"سلامتك ما فيني شي، وش في خاطرك؟\" أو \"ما فهمت عليك والله\".\n" +
+    "3. طابق طول ردك بدقة:\n" +
+    "   - إذا أرسل كلمة أو رسالة صغيرة = رد بكلمات معدودة (من كلمتين إلى 4 كلمات فقط).\n" +
+    "   - إذا طلب عطر = تفاعل معه مباشرة وسأله وش نوع الروائح اللي يحبها (فرنسي بارد ولا عود وبخور ثقيل) بدون خطابات طويلة.\n" +
+    "   - إذا أرسل ملصق = رد فقط بضحكة أو إيموجي (مثل 😂😂 أو هههههه) بدون أي وصف للملصق.\n" +
+    "4. ممنوعات قطعية:\n" +
+    "   - ممنوع مناداة الشخص باسم حسابه في واتساب أو وضعه بين أقواس تنصيص.\n" +
+    "   - ممنوع النقط والقوائم والتنسيقات المقالية.\n" +
+    "   - إذا سألك أحد \"أنت أثر أو مكنون؟\": قل: \"أنا متجر أثر للعطور، حياك الله، وش في خاطرك؟\".";
 
   const customPrompt = String(cfg.systemPrompt || cfg.geminiSystemPrompt || cfg.SYSTEM_PROMPT || "").trim();
   const activePrompt = (!customPrompt || customPrompt.includes("هكر") || customPrompt.includes("اختراق") || customPrompt.includes("مكنون") || customPrompt.length < 50)
@@ -2141,13 +2144,13 @@ async function generateAIResponse(userText, senderName, cfg, mediaData = null) {
 
     if (!messageText) {
       if (mediaData.type === "image") {
-        userParts.push({ text: "هذه صورة أرسلها المستخدم. تفاعل معها وافهم محتواها وعلق عليها أو أجب عليها بذكاء واختصار وعفوية كشخص في واتساب." });
+        userParts.push({ text: "هذه صورة أرسلها المستخدم. تفاعل معها وافهم محتواها وعلق عليها أو أجب عليها باختصار وعفوية كشخص في واتساب بدون فلسفة." });
       } else if (mediaData.type === "audio") {
-        userParts.push({ text: "هذا تسجيل صوتي (بصمة صوت) أرسله المستخدم. استمع إليه بعناية وافهم ما قاله بالضبط، ثم رد عليه بذكاء وطبيعية وبلهجة مناسبة في الصميم." });
+        userParts.push({ text: "هذا تسجيل صوتي (بصمة صوت) أرسله المستخدم. استمع إليه بعناية وافهم ما قاله بالضبط، ثم رد عليه بسطر واحد بطبيعية وبلهجة مناسبة في الصميم." });
       } else if (mediaData.type === "sticker") {
-        userParts.push({ text: "هذا ملصق (Sticker) أرسله المستخدم. تفاعل معه بخفة دم وعفوية وبشكل ذكي ومختصر كشخص في واتساب." });
+        userParts.push({ text: "هذا ملصق أرسله المستخدم. تفاعل معه بضحكة أو إيموجي فقط بدون وصف." });
       } else if (mediaData.type === "video") {
-        userParts.push({ text: "هذا مقطع فيديو أرسله المستخدم. تفاعل معه وعلق عليه باختصار وذكاء." });
+        userParts.push({ text: "هذا مقطع فيديو أرسله المستخدم. تفاعل معه باختصار." });
       } else if (mediaData.type === "document") {
         userParts.push({ text: "هذا مستند أرسله المستخدم. تفاعل مع محتواه باختصار." });
       }
@@ -2158,12 +2161,28 @@ async function generateAIResponse(userText, senderName, cfg, mediaData = null) {
     userParts.push({ text: String(userText || "").slice(0, 2500) });
   }
 
+  // Conversation History Memory for Gemini (up to last 6 alternating turns)
+  const previousTurns = (chatKey ? chatMemory.get(chatKey) : null) || [];
+  const contents = [];
+  let lastRole = null;
+  for (const turn of previousTurns.slice(-6)) {
+    if (turn.role && turn.text && turn.role !== lastRole) {
+      contents.push({
+        role: turn.role,
+        parts: [{ text: String(turn.text).slice(0, 1000) }],
+      });
+      lastRole = turn.role;
+    }
+  }
+  if (contents.length > 0 && contents[contents.length - 1].role === "user") {
+    contents.pop();
+  }
+  contents.push({
+    role: "user",
+    parts: userParts,
+  });
+
   // Candidate models in priority order (2026 active models):
-  // 1. gemini-3.5-flash-lite: Super fast, highest availability, high daily quota
-  // 2. gemini-3.5-flash: High intelligence & multimodal capability
-  // 3. gemini-3.6-flash: Next-gen intelligence
-  // 4. gemini-flash-latest: General fallback
-  // 5. gemini-3.1-flash-lite: High speed fallback
   const candidateModels = [
     "gemini-3.5-flash-lite",
     "gemini-3.5-flash",
@@ -2181,7 +2200,7 @@ async function generateAIResponse(userText, senderName, cfg, mediaData = null) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             systemInstruction: { parts: [{ text: systemPrompt }] },
-            contents: [{ role: "user", parts: userParts }],
+            contents: contents,
             generationConfig: { maxOutputTokens: targetMaxTokens },
           }),
           signal: AbortSignal.timeout(15000),
@@ -2193,7 +2212,18 @@ async function generateAIResponse(userText, senderName, cfg, mediaData = null) {
         }
         const data = await res.json();
         const reply = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-        if (reply) return reply;
+        if (reply) {
+          if (chatKey) {
+            const summaryUser = messageText || (mediaData?.type ? `[أرسل ${mediaData.type}]` : "[رسالة وسائط]");
+            const updatedTurns = [
+              ...previousTurns.slice(-8),
+              { role: "user", text: summaryUser },
+              { role: "model", text: reply },
+            ];
+            chatMemory.set(chatKey, updatedTurns);
+          }
+          return reply;
+        }
       } catch (err) {
         console.warn(`[gemini] key ${key.slice(0, 12)}... model ${model} error:`, err.message);
       }
