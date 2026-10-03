@@ -10,6 +10,7 @@ import {
   Browsers,
   DisconnectReason,
   downloadContentFromMessage,
+  downloadMediaMessage as baileysDownloadMedia,
   jidNormalizedUser,
   normalizeMessageContent,
   proto,
@@ -942,63 +943,73 @@ async function handleSessionFailure(session, err) {
 // ============================================================================
 
 // Helper to download media content from a message (for Anti-Delete & Anti-ViewOnce)
-async function downloadMediaMessage(rawMsg) {
-  const normalized = normalizeMessageContent(rawMsg);
+async function downloadMediaHelper(m) {
+  if (!m) return null;
+  const raw = m.message || m;
+  const normalized = normalizeMessageContent(raw);
   if (!normalized) return null;
 
-  let mediaObj = null;
   let type = "";
   let mimeType = "";
   let fileName = undefined;
 
   if (normalized.imageMessage) {
     type = "image";
-    mediaObj = normalized.imageMessage;
-    mimeType = mediaObj.mimetype || "image/jpeg";
+    mimeType = normalized.imageMessage.mimetype || "image/jpeg";
   } else if (normalized.videoMessage) {
     type = "video";
-    mediaObj = normalized.videoMessage;
-    mimeType = mediaObj.mimetype || "video/mp4";
+    mimeType = normalized.videoMessage.mimetype || "video/mp4";
   } else if (normalized.audioMessage) {
     type = "audio";
-    mediaObj = normalized.audioMessage;
-    mimeType = mediaObj.mimetype || "audio/ogg; codecs=opus";
+    mimeType = normalized.audioMessage.mimetype || "audio/ogg; codecs=opus";
   } else if (normalized.stickerMessage) {
     type = "sticker";
-    mediaObj = normalized.stickerMessage;
     mimeType = "image/webp";
   } else if (normalized.documentMessage) {
     type = "document";
-    mediaObj = normalized.documentMessage;
-    mimeType = mediaObj.mimetype || "application/octet-stream";
-    fileName = mediaObj.fileName || "document";
+    mimeType = normalized.documentMessage.mimetype || "application/octet-stream";
+    fileName = normalized.documentMessage.fileName || "document";
   }
 
-  if (!mediaObj) return null;
+  if (!type) return null;
 
+  // 1. Try Baileys official downloadMediaMessage with 'buffer'
   try {
-    const stream = await downloadContentFromMessage(mediaObj, type);
-    const chunks = [];
-    for await (const chunk of stream) {
-      chunks.push(chunk);
+    const fullMsg = m.message ? m : { message: m };
+    const buffer = await baileysDownloadMedia(fullMsg, "buffer");
+    if (buffer && buffer.length > 0) {
+      return { buffer, type, mimeType, fileName };
     }
-    const buffer = Buffer.concat(chunks);
-    return { buffer, type, mimeType, fileName };
-  } catch (err) {
-    return null;
-  }
+  } catch (err) {}
+
+  // 2. Fallback to downloadContentFromMessage stream
+  try {
+    const mediaObj = normalized[`${type}Message`];
+    if (mediaObj) {
+      const stream = await downloadContentFromMessage(mediaObj, type);
+      const chunks = [];
+      for await (const chunk of stream) chunks.push(chunk);
+      const buffer = Buffer.concat(chunks);
+      if (buffer && buffer.length > 0) {
+        return { buffer, type, mimeType, fileName };
+      }
+    }
+  } catch (err2) {}
+
+  return null;
 }
 
-// Helper to send recovered media or fallback to forward/text
-async function sendRecoveredMessage(sock, destJid, orig, header) {
+// Helper to send recovered media or fallback to text message with quoted reply
+async function sendRecoveredMessage(sock, destJid, orig, header, quotedMsg = null) {
+  if (!sock || !destJid) return;
   let buffer = orig.mediaBuffer;
   let type = orig.mediaType;
   let mimeType = orig.mimeType;
   let fileName = orig.fileName;
 
-  if (!buffer && orig.m?.message) {
+  if (!buffer && orig.m) {
     try {
-      const dl = await downloadMediaMessage(orig.m.message);
+      const dl = await downloadMediaHelper(orig.m);
       if (dl) {
         buffer = dl.buffer;
         type = dl.type;
@@ -1008,32 +1019,29 @@ async function sendRecoveredMessage(sock, destJid, orig, header) {
     } catch {}
   }
 
+  const quoteOption = quotedMsg ? { quoted: quotedMsg } : {};
+
   if (buffer && type) {
     try {
       if (type === "image") {
-        return await sock.sendMessage(destJid, { image: buffer, caption: header });
+        return await sock.sendMessage(destJid, { image: buffer, caption: header }, quoteOption);
       } else if (type === "video") {
-        return await sock.sendMessage(destJid, { video: buffer, caption: header });
+        return await sock.sendMessage(destJid, { video: buffer, caption: header }, quoteOption);
       } else if (type === "audio") {
-        await sock.sendMessage(destJid, { text: header });
+        await sock.sendMessage(destJid, { text: header }, quoteOption);
         return await sock.sendMessage(destJid, { audio: buffer, mimetype: mimeType || "audio/mp4", ptt: true });
       } else if (type === "sticker") {
-        await sock.sendMessage(destJid, { text: header });
+        await sock.sendMessage(destJid, { text: header }, quoteOption);
         return await sock.sendMessage(destJid, { sticker: buffer });
       } else if (type === "document") {
-        return await sock.sendMessage(destJid, { document: buffer, mimetype: mimeType || "application/octet-stream", fileName: fileName || "file", caption: header });
+        return await sock.sendMessage(destJid, { document: buffer, mimetype: mimeType || "application/octet-stream", fileName: fileName || "document", caption: header }, quoteOption);
       }
     } catch (err) {
-      console.warn("[send-recovered-media] failed:", err.message);
+      console.warn(`[send-recovered-media] failed sending media to ${destJid}:`, err.message);
     }
   }
 
-  await sock.sendMessage(destJid, { text: header });
-  if (orig.m) {
-    try {
-      await sock.sendMessage(destJid, { forward: orig.m });
-    } catch {}
-  }
+  return await sock.sendMessage(destJid, { text: header }, quoteOption);
 }
 
 // هل يحق للمرسل تنفيذ أوامر الإدارة؟ (مالك البوت أو مشرف رسمي في المجموعة أو أدمن المنصة)
@@ -1105,7 +1113,7 @@ async function handleMessagesUpsert(session, { messages, type }) {
 
         const norm = normalizeMessageContent(rawMsg);
         if (norm?.imageMessage || norm?.videoMessage || norm?.audioMessage || norm?.stickerMessage || norm?.documentMessage) {
-          downloadMediaMessage(norm).then((dl) => {
+          downloadMediaHelper(m).then((dl) => {
             if (dl && messageCache.has(m.key.id)) {
               const entry = messageCache.get(m.key.id);
               if (entry) {
@@ -1113,6 +1121,7 @@ async function handleMessagesUpsert(session, { messages, type }) {
                 entry.mediaType = dl.type;
                 entry.mimeType = dl.mimeType;
                 entry.fileName = dl.fileName;
+                console.log(`[cache][${bot.id}] 📥 cached media (${dl.type}) for msg ${m.key.id}`);
               }
             }
           }).catch(() => {});
@@ -1138,7 +1147,7 @@ async function handleMessagesUpsert(session, { messages, type }) {
           const chatType = m.key.remoteJid?.includes("@g.us") ? "مجموعة" : "خاص";
           const header = `👁️ *تم كشف وحفظ وسائط لمرة واحدة (View Once)!*\n👤 *المرسل:* ${senderName}\n💬 *المحادثة:* ${chatType}`;
           try {
-            const dl = await downloadMediaMessage(normalized);
+            const dl = await downloadMediaHelper(m);
             if (dl?.buffer) {
               if (dl.type === "image") {
                 await sock.sendMessage(selfJid, { image: dl.buffer, caption: header });
@@ -1222,21 +1231,56 @@ async function handleMessagesUpsert(session, { messages, type }) {
 // Unified Anti-Delete Trigger
 async function triggerAntiDelete(session, deletedMsgId, chatJid, senderJid) {
   const orig = messageCache.get(deletedMsgId);
-  if (!orig) return;
-  messageCache.delete(deletedMsgId);
-
-  // Skip self-deleted messages so user isn't spammed with their own deletions
-  if (orig.m?.key?.fromMe) return;
-
-  const sock = session.sock;
   const bot = session.bot;
+  const sock = session.sock;
   if (!sock) return;
 
+  if (!orig) {
+    console.log(`[antidelete][${bot.id}] message ${deletedMsgId} not found in cache`);
+    return;
+  }
+  messageCache.delete(deletedMsgId);
+
+  const isSelf = Boolean(orig.m?.key?.fromMe);
   const selfJid = sock.user?.id ? jidNormalizedUser(sock.user.id) : null;
-  const senderClean = jidNormalizedUser(orig.sender || senderJid || "");
-  const senderPhone = senderClean.split("@")[0];
-  const senderName = orig.name ? `${orig.name} (${senderPhone})` : senderPhone;
-  const chatType = orig.chat && orig.chat.includes("@g.us") ? "مجموعة" : "خاص";
+  const ownerNumber = (bot.linked_number || bot.phone || "").replace(/\D/g, "");
+  const ownerJid = ownerNumber ? `${ownerNumber}@s.whatsapp.net` : selfJid;
+
+  // If user deleted their own message while testing, confirm that the bot detected the deletion!
+  if (isSelf) {
+    console.log(`[antidelete][${bot.id}] owner deleted own message ${deletedMsgId}`);
+    if (ownerJid) {
+      const timeStr = new Date().toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" });
+      const testMsg = `🗑️ *[تأكيد مضاد الحذف]* ✅\n\n` +
+        `قمت بحذف رسالتك (${deletedMsgId}) وتم رصد حدث الحذف بنجاح!\n` +
+        `⏰ *الوقت:* ${timeStr}\n` +
+        `🤖 *محرك مضاد الحذف يعمل بأعلى دقة 24/7!*`;
+      await sock.sendMessage(ownerJid, { text: testMsg }).catch(() => {});
+    }
+    return;
+  }
+
+  // Resolve JIDs (handling @lid conversion via Baileys and lidMap)
+  let resolvedSender = orig.sender || senderJid || "";
+  let resolvedChat = orig.chat || chatJid || "";
+
+  if (resolvedSender.endsWith("@lid")) {
+    const pn = await sock.signalRepository?.lidMapping?.getPNForLID(resolvedSender).catch(() => null);
+    if (pn) resolvedSender = pn;
+    else if (lidMap.has(resolvedSender)) resolvedSender = lidMap.get(resolvedSender);
+  }
+
+  if (resolvedChat.endsWith("@lid")) {
+    const pn = await sock.signalRepository?.lidMapping?.getPNForLID(resolvedChat).catch(() => null);
+    if (pn) resolvedChat = pn;
+    else if (lidMap.has(resolvedChat)) resolvedChat = lidMap.get(resolvedChat);
+  }
+
+  const senderClean = jidNormalizedUser(resolvedSender);
+  const senderPhone = senderClean.split("@")[0].replace(/\D/g, "");
+  const senderName = orig.name ? `${orig.name} (${senderPhone})` : (senderPhone ? `+${senderPhone}` : "مجهول");
+  const isGroup = resolvedChat.includes("@g.us");
+  const chatType = isGroup ? "مجموعة 👥" : "محادثة خاصة 👤";
 
   const msg = normalizeMessageContent(orig.m?.message);
   const deletedText =
@@ -1255,36 +1299,40 @@ async function triggerAntiDelete(session, deletedMsgId, chatJid, senderJid) {
     msg?.documentMessage
   );
 
-  if (hasMedia && msg) {
-    if (msg.imageMessage) msg.imageMessage.viewOnce = false;
-    if (msg.videoMessage) msg.videoMessage.viewOnce = false;
-    if (msg.audioMessage) msg.audioMessage.viewOnce = false;
-  }
-  
-  if (orig.m && msg) {
-      orig.m.message = msg; // Update the original message with the unwrapped, modified message
-  }
+  let mediaTypeLabel = "نص كتابي 📝";
+  if (msg?.imageMessage) mediaTypeLabel = "صورة 🖼️";
+  else if (msg?.videoMessage) mediaTypeLabel = "فيديو 🎥";
+  else if (msg?.audioMessage) mediaTypeLabel = "تسجيل صوتي 🎵";
+  else if (msg?.stickerMessage) mediaTypeLabel = "ملصق 🎭";
+  else if (msg?.documentMessage) mediaTypeLabel = "مستند 📄";
 
-  let header = `🗑️ *تم كشف واسترجاع رسالة محذوفة!*\n👤 *المرسل:* ${senderName}\n💬 *المحادثة:* ${chatType}`;
+  let header = `🗑️ *تم كشف واسترجاع رسالة محذوفة!*\n\n` +
+    `👤 *المرسل:* ${senderName}\n` +
+    `💬 *المحادثة:* ${chatType}\n` +
+    `📎 *النوع:* ${mediaTypeLabel}\n`;
+
   if (deletedText) {
-    header += `\n\n📝 *نص الرسالة:*\n${deletedText}`;
-  } else if (hasMedia) {
-    header += `\n\n📎 *نوع الرسالة:* وسائط / تسجيل صوتي / صورة`;
+    header += `📝 *نص الرسالة:*\n« ${deletedText} »\n`;
   }
 
-  // 1. Send alert and recovered media to "Note to Self" (مراسلة نفسك)
-  if (selfJid) {
+  const timeStr = new Date().toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" });
+  header += `⏰ *الوقت:* ${timeStr}`;
+
+  // 1. Send alert and recovered media to Owner ("Note to Self")
+  if (ownerJid) {
     try {
-      await sendRecoveredMessage(sock, selfJid, orig, header);
+      await sendRecoveredMessage(sock, ownerJid, orig, header);
+      console.log(`[antidelete][${bot.id}] 📢 Sent recovered message to owner (${ownerJid})`);
     } catch (e) {
-      console.warn(`[antidelete][${bot.id}] send to self failed:`, e.message);
+      console.warn(`[antidelete][${bot.id}] send to owner failed:`, e.message);
     }
   }
 
   // 2. Also send in the same chat so the user immediately sees the recovered message
-  if (orig.chat && bot.settings?.antiDeleteInChat !== false) {
+  if (resolvedChat && bot.settings?.antiDeleteInChat !== false && resolvedChat !== ownerJid) {
     try {
-      await sendRecoveredMessage(sock, orig.chat, orig, header);
+      await sendRecoveredMessage(sock, resolvedChat, orig, header, orig.m);
+      console.log(`[antidelete][${bot.id}] 📢 Sent recovered message in-chat (${resolvedChat})`);
     } catch (e) {
       console.warn(`[antidelete][${bot.id}] in-chat send failed:`, e.message);
     }
@@ -1292,13 +1340,13 @@ async function triggerAntiDelete(session, deletedMsgId, chatJid, senderJid) {
 
   console.log(`[antidelete][${bot.id}] ✅ recovered deleted message ${deletedMsgId} from ${senderName}`);
   await addLog(bot.id, "message_recovered", {
-    sender: orig.sender,
+    sender: resolvedSender,
     name: orig.name || senderName,
-    chat: orig.chat,
+    chat: resolvedChat,
     id: deletedMsgId,
     text: deletedText,
     hasMedia,
-    mediaType: orig.mediaType || (hasMedia ? "وسائط / صورة / صوت 📎" : "نص"),
+    mediaType: mediaTypeLabel,
   });
 }
 
