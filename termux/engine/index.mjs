@@ -1655,18 +1655,30 @@ async function handleChatMessage(session, m, cfg) {
   const sender = jidNormalizedUser(m.key.participant || chat || "");
   const isGroup = chat.endsWith("@g.us");
 
+  const rawMsg = m.message || {};
+  const norm = normalizeMessageContent(rawMsg);
+
   const text =
-    m.message?.conversation ||
-    m.message?.extendedTextMessage?.text ||
-    m.message?.imageMessage?.caption ||
-    m.message?.videoMessage?.caption ||
+    norm?.conversation ||
+    norm?.extendedTextMessage?.text ||
+    norm?.imageMessage?.caption ||
+    norm?.videoMessage?.caption ||
+    norm?.documentMessage?.caption ||
     "";
 
   if (m.key?.id && text && !m.key.fromMe) recentTexts.set(`${bot.id}:${m.key.id}`, text);
 
-  if (!text) return;
+  const hasMedia = Boolean(
+    norm?.imageMessage ||
+    norm?.videoMessage ||
+    norm?.audioMessage ||
+    norm?.stickerMessage ||
+    norm?.documentMessage
+  );
 
-  const isCommand = /^[.!\/]/.test(text.trim());
+  if (!text && !hasMedia) return;
+
+  const isCommand = Boolean(text && /^[.!\/]/.test(text.trim()));
 
   // Anti-loop protection: Only ignore normal messages sent to self, but ALLOW commands (.مجموعاتي, .مشرف, etc.)
   const selfJid = session.sock?.user?.id || "";
@@ -1686,7 +1698,7 @@ async function handleChatMessage(session, m, cfg) {
   if (!canReplyChat) return;
 
   // Anti-Link Firewall (Groups Only)
-  if (isGroup && cfg.antiLink !== false && !m.key.fromMe) {
+  if (isGroup && cfg.antiLink !== false && !m.key.fromMe && text) {
     const hasLink = /(chat\.whatsapp\.com|wa\.me|https?:\/\/)/i.test(text);
     const bannedDomain =
       Array.isArray(cfg.firewallDomains) && cfg.firewallDomains.length > 0
@@ -1714,7 +1726,8 @@ async function handleChatMessage(session, m, cfg) {
     }
   }
 
-  console.log(`[chat-msg][${bot.id}] from ${sender} (${isGroup ? "group" : "private"}): "${text.slice(0, 45)}"`);
+  const mediaLabel = norm?.imageMessage ? "[صورة 🖼️]" : norm?.audioMessage ? "[تسجيل صوتي 🎵]" : norm?.stickerMessage ? "[ملصق 🎭]" : norm?.videoMessage ? "[فيديو 🎥]" : "";
+  console.log(`[chat-msg][${bot.id}] from ${sender} (${isGroup ? "group" : "private"}): "${(text || mediaLabel).slice(0, 45)}"`);
 
   // 0. Group Admin & Bot Commands (.مشرف, .مجموعاتي, .admin, .promote, etc.)
   const trimmedText = text.trim();
@@ -1950,12 +1963,26 @@ if (!botIsAdmin) {
     }
   }
 
-  // 2. AI Smart Reply (with fast timeout and key rotation)
+  // 2. AI Smart Reply (Multimodal: Text, Images, Audio/Voice Notes, Stickers)
   let replied = false;
   if (cfg.smartReply !== false) {
     try {
       try { await sock.sendPresenceUpdate("composing", chat); } catch {}
-      const reply = await generateAIResponse(text, m.pushName || "", cfg);
+
+      // Pre-download media buffer if message has media
+      let mediaData = null;
+      if (hasMedia && !isCommand) {
+        try {
+          const dl = await downloadMediaHelper(m);
+          if (dl && dl.buffer && dl.buffer.length > 0) {
+            mediaData = dl;
+          }
+        } catch (e) {
+          console.warn(`[smart-reply][${bot.id}] media download error:`, e.message);
+        }
+      }
+
+      const reply = await generateAIResponse(text, m.pushName || "", cfg, mediaData);
       if (reply && session.sock) {
         history.push(now);
         recentReplies.set(chatLimitKey, history);
@@ -1991,8 +2018,8 @@ if (!botIsAdmin) {
   }
 }
 
-// AI Response Generator (Gemini with multi-key rotation and active 2026 models)
-async function generateAIResponse(userText, senderName, cfg) {
+// AI Response Generator (Gemini Multimodal with multi-key rotation and active 2026 models)
+async function generateAIResponse(userText, senderName, cfg, mediaData = null) {
   const candidateKeys = [];
 
   // 1. cfg.geminiApiKeys (from settings page: mapped from GEMINI_API_KYES -> geminiApiKeys in DB)
@@ -2039,7 +2066,16 @@ async function generateAIResponse(userText, senderName, cfg) {
   let lengthInstruction = "";
   let targetMaxTokens = 250;
 
-  if (messageWordCount <= 3) {
+  if (mediaData && !messageText) {
+    targetMaxTokens = 300;
+    if (mediaData.type === "sticker") {
+      lengthInstruction = "توجيه: المستخدم أرسل ملصق (Sticker). علق عليه بخفة دم وتفاعل سريع وبجملة أو جملتين فقط.";
+    } else if (mediaData.type === "audio") {
+      lengthInstruction = "توجيه: المستخدم أرسل تسجيل صوتي. استمع إليه ورد عليه مباشرة في الصميم وبلهجة عربية عفوية كشخص في واتساب.";
+    } else {
+      lengthInstruction = "توجيه: المستخدم أرسل صورة أو وسائط. تفاعل معها واذكر ملاحظتك أو جوابك بذكاء وبدون إطالة.";
+    }
+  } else if (messageWordCount <= 3) {
     targetMaxTokens = 80;
     lengthInstruction = "توجيه: رسالة قصيرة أو تحية. أجب بعفوية وذكاء وطبيعية وبدون إطالة زائدة.";
   } else if (!isAskingDetail) {
@@ -2060,16 +2096,57 @@ async function generateAIResponse(userText, senderName, cfg) {
     ? `${customPrompt}\n\n${lengthInstruction}${senderName ? `\nاسم المتحدث: ${senderName}` : ""}`
     : `${smartPersonaPrompt}\n\n${lengthInstruction}${senderName ? `\nاسم المتحدث: ${senderName}` : ""}`;
 
+  // Build multimodal parts (media + text prompt)
+  const userParts = [];
+
+  if (mediaData && mediaData.buffer && mediaData.buffer.length > 0) {
+    let cleanMime = (mediaData.mimeType || "").split(";")[0].trim().toLowerCase();
+    if (mediaData.type === "sticker" || cleanMime.includes("webp")) cleanMime = "image/webp";
+    else if (mediaData.type === "image" && (!cleanMime || cleanMime === "image")) cleanMime = "image/jpeg";
+    else if (mediaData.type === "audio") {
+      if (!cleanMime || cleanMime === "audio") cleanMime = "audio/ogg";
+    } else if (mediaData.type === "video") {
+      if (!cleanMime || cleanMime === "video") cleanMime = "video/mp4";
+    }
+
+    userParts.push({
+      inlineData: {
+        mimeType: cleanMime,
+        data: mediaData.buffer.toString("base64"),
+      },
+    });
+
+    if (!messageText) {
+      if (mediaData.type === "image") {
+        userParts.push({ text: "هذه صورة أرسلها المستخدم. تفاعل معها وافهم محتواها وعلق عليها أو أجب عليها بذكاء واختصار وعفوية كشخص في واتساب." });
+      } else if (mediaData.type === "audio") {
+        userParts.push({ text: "هذا تسجيل صوتي (بصمة صوت) أرسله المستخدم. استمع إليه بعناية وافهم ما قاله بالضبط، ثم رد عليه بذكاء وطبيعية وبلهجة مناسبة في الصميم." });
+      } else if (mediaData.type === "sticker") {
+        userParts.push({ text: "هذا ملصق (Sticker) أرسله المستخدم. تفاعل معه بخفة دم وعفوية وبشكل ذكي ومختصر كشخص في واتساب." });
+      } else if (mediaData.type === "video") {
+        userParts.push({ text: "هذا مقطع فيديو أرسله المستخدم. تفاعل معه وعلق عليه باختصار وذكاء." });
+      } else if (mediaData.type === "document") {
+        userParts.push({ text: "هذا مستند أرسله المستخدم. تفاعل مع محتواه باختصار." });
+      }
+    } else {
+      userParts.push({ text: String(userText).slice(0, 2500) });
+    }
+  } else {
+    userParts.push({ text: String(userText || "").slice(0, 2500) });
+  }
+
   // Candidate models in priority order (2026 active models):
   // 1. gemini-3.5-flash-lite: Super fast, highest availability, high daily quota
-  // 2. gemini-3.1-flash-lite: High speed fallback
-  // 3. gemini-3.6-flash: High intelligence fallback
+  // 2. gemini-3.5-flash: High intelligence & multimodal capability
+  // 3. gemini-3.6-flash: Next-gen intelligence
   // 4. gemini-flash-latest: General fallback
+  // 5. gemini-3.1-flash-lite: High speed fallback
   const candidateModels = [
     "gemini-3.5-flash-lite",
-    "gemini-3.1-flash-lite",
+    "gemini-3.5-flash",
     "gemini-3.6-flash",
     "gemini-flash-latest",
+    "gemini-3.1-flash-lite",
   ];
 
   for (const model of candidateModels) {
@@ -2081,10 +2158,10 @@ async function generateAIResponse(userText, senderName, cfg) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             systemInstruction: { parts: [{ text: systemPrompt }] },
-            contents: [{ role: "user", parts: [{ text: String(userText).slice(0, 2500) }] }],
+            contents: [{ role: "user", parts: userParts }],
             generationConfig: { maxOutputTokens: targetMaxTokens },
           }),
-          signal: AbortSignal.timeout(8000),
+          signal: AbortSignal.timeout(15000),
         });
 
         if (!res.ok) {
