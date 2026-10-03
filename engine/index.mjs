@@ -749,7 +749,7 @@ async function handleConnectionUpdate(session, u, wantsPairingCode) {
 
             const directLink = `${appUrl}/setting?number=${encodeURIComponent(number)}&secret=${encodeURIComponent(secret)}`;
             const msg = 
-`🛡️ *لوحة تحكم وأتمتة البوت الخاص بك!*
+`🛡️ *منصة hatem X — لوحة تحكم وأتمتة البوت!*
 
 📱 *الرقم المربوط:* +${number}
 🔑 *كلمة السر للدخول:*

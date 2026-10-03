@@ -26,7 +26,7 @@ export default function ReferralBox({
   }
 
   const shareText = encodeURIComponent(
-    `🤖 جرّب بوت برو — بوت واتساب ذكي يتفاعل مع الحالات ويحميك من الحذف مجاناً!\n${url}`
+    `🤖 جرّب hatem X — بوت واتساب ذكي يتفاعل مع الحالات ويحميك من الحذف مجاناً!\n${url}`
   );
 
   return (

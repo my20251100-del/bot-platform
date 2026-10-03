@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import GroupsClient from "./groups-client";
 
 export const metadata = {
-  title: "إدارة المجموعات والترقية لمشرف — بوت برو",
+  title: "إدارة المجموعات والترقية لمشرف — hatem X",
 };
 
 export default async function GroupsPage() {

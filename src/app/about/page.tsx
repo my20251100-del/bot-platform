@@ -13,7 +13,7 @@ export default async function AboutPage() {
       <main className="flex-1">
         <div className="mx-auto max-w-4xl px-4 py-14 sm:px-6 sm:py-20">
           <div className="reveal text-center">
-            <h1 className="cyber-title text-3xl font-bold sm:text-4xl">{t("حول بوت برو")}</h1>
+            <h1 className="cyber-title text-3xl font-bold sm:text-4xl">{t("حول hatem X")}</h1>
             <p className="mt-3 text-muted">{t("منصة نمو قنوات واتساب.")}</p>
           </div>
 
@@ -24,7 +24,7 @@ export default async function AboutPage() {
                 <div>
                   <h2 className="text-xl font-bold">من نحن</h2>
                   <p className="mt-2 text-sm leading-relaxed text-muted">
-                    بوت برو منصة عضوية مميزة لنمو قنوات واتساب عبر تفاعلات ومتابعين حقيقيين،
+                    hatem X منصة عضوية مميزة لنمو قنوات واتساب عبر تفاعلات ومتابعين حقيقيين،
                     بالإضافة إلى باقة متنامية من البوتات والأدوات الرقمية.
                   </p>
                 </div>

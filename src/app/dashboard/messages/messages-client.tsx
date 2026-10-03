@@ -20,7 +20,7 @@ export default function MessagesClient({
   const [search, setSearch] = useState("");
   const [autoReplyText, setAutoReplyText] = useState(
     activeBot?.settings?.autoReplyMessage ||
-      "مرحباً بك! 👋 تم استلام رسالتك وسنقوم بالرد عليك في أقرب وقت. تم الرد تلقائياً بواسطة بوت برو ⚡"
+      "مرحباً بك! 👋 تم استلام رسالتك وسنقوم بالرد عليك في أقرب وقت. تم الرد تلقائياً بواسطة hatem X ⚡"
   );
   const [autoReplyEnabled, setAutoReplyEnabled] = useState(
     activeBot?.settings?.autoReply !== false

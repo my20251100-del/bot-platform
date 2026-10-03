@@ -4,7 +4,7 @@ import { getServerLocale } from "@/lib/server-locale";
 import { tr } from "@/lib/i18n";
 
 export const metadata = {
-  title: "اتصل بنا — بوت برو | التواصل المباشر مع الإدارة",
+  title: "اتصل بنا — hatem X | التواصل المباشر مع الإدارة",
   description: "تواصل مباشرة مع صاحب المنصة محمد حاتم عبر واتساب على الرقم 772847565 أو عبر الاتصال الهاتفي والبريد الإلكتروني 24/7.",
 };
 

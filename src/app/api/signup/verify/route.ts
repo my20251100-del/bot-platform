@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
 
       const appUrl = (process.env.APP_URL || "https://bot-platform-delta.vercel.app").replace(/\/$/, "");
       const welcomeMsg = 
-`🎉 *أهلاً بك في منصة بوت برو!*
+`🎉 *أهلاً بك في منصة hatem X!*
 
 تم تأكيد حسابك بنجاح. يمكنك الآن الدخول إلى لوحة التحكم والبدء في ربط بوتك وإعداد الأتمتة:
 

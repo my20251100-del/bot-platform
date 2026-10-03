@@ -10,7 +10,7 @@ import { rateLimit, clientIp } from "@/lib/rate-limit";
 export const runtime = "nodejs";
 
 function buildResetOtpMessage(code: string) {
-  return `🔐 *بوت برو — استعادة كلمة المرور*\n\nرمز التحقق لتعيين كلمة مرور جديدة هو:\n\n*${code}*\n\nصالح لمدة 15 دقيقة.\nلا تشارك هذا الرمز مع أي شخص.\n\n— بوت برو`;
+  return `🔐 *hatem X — استعادة كلمة المرور*\n\nرمز التحقق لتعيين كلمة مرور جديدة هو:\n\n*${code}*\n\nصالح لمدة 15 دقيقة.\nلا تشارك هذا الرمز مع أي شخص.\n\n— hatem X`;
 }
 
 export async function POST(req: NextRequest) {

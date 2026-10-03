@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-  title: "سجل العمليات | بوت برو",
+  title: "سجل العمليات | hatem X",
   description: "سجل العمليات الموحد لجميع بوتات واتساب الخاصة بك",
 };
 

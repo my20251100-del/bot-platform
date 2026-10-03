@@ -121,12 +121,14 @@ export const DICT: Record<string, { ar: string; en: string }> = {
   "جارٍ التحميل...": { ar: "جارٍ التحميل...", en: "Loading..." },
 
   // ===== صفحات عامة =====
-  "حول بوت برو": { ar: "حول بوت برو", en: "About Bot Pro" },
+  "حول hatem X": { ar: "حول hatem X", en: "About hatem X" },
+  "حول بوت برو": { ar: "حول hatem X", en: "About hatem X" },
   "منصة نمو قنوات واتساب.": { ar: "منصة نمو قنوات واتساب.", en: "A WhatsApp channel growth platform." },
   "جاهز للانضمام؟": { ar: "جاهز للانضمام؟", en: "Ready to join?" },
   "ابدأ نمو قناتك اليوم مجاناً.": { ar: "ابدأ نمو قناتك اليوم مجاناً.", en: "Start growing your channel today, free." },
   "ابدأ الآن": { ar: "ابدأ الآن", en: "Start Now" },
-  "كل ما تحتاج معرفته عن بوت برو.": { ar: "كل ما تحتاج معرفته عن بوت برو.", en: "Everything you need to know about Bot Pro." },
+  "كل ما تحتاج معرفته عن hatem X.": { ar: "كل ما تحتاج معرفته عن hatem X.", en: "Everything you need to know about hatem X." },
+  "كل ما تحتاج معرفته عن بوت برو.": { ar: "كل ما تحتاج معرفته عن hatem X.", en: "Everything you need to know about hatem X." },
   "لديك أسئلة أخرى؟": { ar: "لديك أسئلة أخرى؟", en: "Any other questions?" },
   "تواصل معنا وسنكون سعداء بمساعدتك.": { ar: "تواصل معنا وسنكون سعداء بمساعدتك.", en: "Contact us and we will be happy to help you." },
   "تواصل معنا": { ar: "تواصل معنا", en: "Contact Us" },

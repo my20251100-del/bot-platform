@@ -6,8 +6,8 @@ import { tr } from "@/lib/i18n";
 
 const faqs = [
   {
-    q: "ما هو بوت برو؟",
-    a: "بوت برو منصة عضوية لنمو قنوات واتساب عبر تفاعلات ومتابعين حقيقيين، بالإضافة إلى باقة متنامية من البوتات المجانية والأدوات الرقمية.",
+    q: "ما هو hatem X؟",
+    a: "hatem X منصة عضوية لنمو قنوات واتساب عبر تفاعلات ومتابعين حقيقيين، بالإضافة إلى باقة متنامية من البوتات المجانية والأدوات الرقمية.",
   },
   {
     q: "هل إنشاء الحساب مجاني؟",
@@ -49,7 +49,7 @@ export default async function FaqPage() {
         <div className="mx-auto max-w-3xl px-4 py-14 sm:px-6 sm:py-20">
           <div className="reveal text-center">
             <h1 className="cyber-title text-3xl font-bold sm:text-4xl">{t("الأسئلة الشائعة")}</h1>
-            <p className="mt-3 text-muted">{t("كل ما تحتاج معرفته عن بوت برو.")}</p>
+            <p className="mt-3 text-muted">{t("كل ما تحتاج معرفته عن hatem X.")}</p>
           </div>
           <FaqAccordion items={faqs} />
           <div className="card mt-8 p-8 text-center reveal">

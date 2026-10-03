@@ -11,7 +11,7 @@ export function getOtpTargetNumber(toNumber: string) {
 }
 
 export function buildOtpMessage(code: string) {
-  return `🔐 *بوت برو — رمز التحقق*\n\nرمز التحقق الخاص بك هو:\n\n*${code}*\n\nينتهي صلاحيته خلال 5 دقائق.\nلا تشاركه مع أي شخص.\n\n— بوت برو`;
+  return `🔐 *hatem X — رمز التحقق*\n\nرمز التحقق الخاص بك هو:\n\n*${code}*\n\nينتهي صلاحيته خلال 5 دقائق.\nلا تشاركه مع أي شخص.\n\n— hatem X`;
 }
 
 export function pickConnectedBotId(

@@ -14,7 +14,7 @@ export default function TermsPage() {
           <div className="card mt-8 space-y-6 p-6 sm:p-8 text-sm leading-relaxed text-muted reveal">
             <section>
               <h2 className="text-lg font-bold text-white">1. قبول الشروط</h2>
-              <p className="mt-2">باستخدامك بوت برو فإنك توافق على هذه الشروط. إذا لم توافق، يرجى عدم استخدام المنصة.</p>
+              <p className="mt-2">باستخدامك hatem X فإنك توافق على هذه الشروط. إذا لم توافق، يرجى عدم استخدام المنصة.</p>
             </section>
             <section>
               <h2 className="text-lg font-bold text-white">2. الحسابات</h2>
@@ -30,7 +30,7 @@ export default function TermsPage() {
             </section>
             <section>
               <h2 className="text-lg font-bold text-white">5. عدم الانتماء</h2>
-              <p className="mt-2">بوت برو غير تابع لواتساب أو ميتا. واتساب علامة تجارية لمالكها. استخدام البوتات يخضع أيضاً لشروط واتساب.</p>
+              <p className="mt-2">hatem X غير تابع لواتساب أو ميتا. واتساب علامة تجارية لمالكها. استخدام البوتات يخضع أيضاً لشروط واتساب.</p>
             </section>
             <section>
               <h2 className="text-lg font-bold text-white">6. إخلاء المسؤولية</h2>

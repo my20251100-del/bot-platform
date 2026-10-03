@@ -2,7 +2,7 @@ import Link from "next/link";
 import ActiveBotsChart from "@/components/active-bots-chart";
 
 export const metadata = {
-  title: "The Mini Bot — Red Queen Edition | بوت برو",
+  title: "The Mini Bot — Red Queen Edition | hatem X",
   description: "Deploy a free WhatsApp bot with pair code or QR. Auto-reply, anti-delete, anti view-once, auto-react, privacy controls and contact auto-save.",
 };
 
