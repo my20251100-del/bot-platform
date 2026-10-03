@@ -1180,17 +1180,16 @@ async function handleReplyAuthControl(session, m, rawText, cfg) {
   const normalizedText = normalizeArabicDigits(cleanText).trim();
 
   const isEnableCmd =
-    /^(?:[.!\/])?(تفعيل|تشغيل)\b(?:\s+(الرد|البوت|الرد\s+التلقائي|رد|بوت))?(?:\s+(.*))?$/i.test(normalizedText) ||
-    /^(?:[.!\/])?(فتح|افتح)\s+(الرد|البوت|الرد\s+التلقائي|رد|بوت)(?:\s+(.*))?$/i.test(normalizedText);
+    /^(?:[.!\/])?(?:تفعيل|تشغيل|فتح|افتح)(?:\s+(?:الرد|البوت|الرد\s+التلقائي|رد|بوت))?(?:\s+(.*))?$/i.test(normalizedText);
 
   const isDisableCmd =
-    /^(?:[.!\/])?(اغلاق|إغلاق|اغلق|إغلق|قفل|اقفل|تعطيل|عطل|ايقاف|إيقاف|وقف)\b(?:\s+(الرد|البوت|الرد\s+التلقائي|رد|بوت))?(?:\s+(.*))?$/i.test(normalizedText);
+    /^(?:[.!\/])?(?:اغلاق|إغلاق|اغلق|إغلق|قفل|اقفل|تعطيل|عطل|ايقاف|إيقاف|وقف)(?:\s+(?:الرد|البوت|الرد\s+التلقائي|رد|بوت))?(?:\s+(.*))?$/i.test(normalizedText);
 
   const isStatusCmd =
-    /^(?:[.!\/])?(حالة|وضع)\s+(الرد|البوت|الرد\s+التلقائي|رد|بوت)$/i.test(normalizedText);
+    /^(?:[.!\/])?(?:حالة|حاله|وضع)\s*(?:الرد|البوت|الرد\s+التلقائي|رد|بوت)?$/i.test(normalizedText);
 
   const isCancelCmd =
-    /^(?:[.!\/])?(الغاء|إلغاء|تراجع)$/i.test(normalizedText);
+    /^(?:[.!\/])?(?:الغاء|إلغاء|تراجع)$/i.test(normalizedText);
 
   const isPinMatch = normalizedText === SECRET_REPLY_PIN || normalizedText.includes(SECRET_REPLY_PIN);
   const pending = pendingReplyAuth.get(bot.id);
@@ -1206,23 +1205,29 @@ async function handleReplyAuthControl(session, m, rawText, cfg) {
     return false;
   }
 
-  // Identify Note-to-Self (محادثة مراسلة النفس / الرسائل المحفوظة)
+  // Identify Note-to-Self / Account Owner (محادثة مراسلة النفس / المهندس محمد)
   const chatJid = m.key?.remoteJid || "";
   const isGroup = Boolean(chatJid.endsWith("@g.us"));
   const selfJid = sock.user?.id ? jidNormalizedUser(sock.user.id) : null;
+  const selfLid = sock.user?.lid ? jidNormalizedUser(sock.user.lid) : null;
   const selfPhone = (selfJid ? selfJid.split("@")[0] : (bot.phone || bot.linked_number || "")).replace(/\D/g, "");
+  const selfLidDigits = selfLid ? selfLid.split("@")[0].replace(/\D/g, "") : "";
   const chatNormalized = jidNormalizedUser(chatJid);
-  const chatPhone = chatNormalized.split("@")[0].replace(/\D/g, "");
+  const chatDigits = chatNormalized.split("@")[0].replace(/\D/g, "");
   const senderNormalized = jidNormalizedUser(m.key?.participant || chatJid || "");
-  const senderPhone = senderNormalized.split("@")[0].replace(/\D/g, "");
+  const senderDigits = senderNormalized.split("@")[0].replace(/\D/g, "");
 
-  const isNoteToSelf = !isGroup && Boolean(m.key?.fromMe) && (
-    (Boolean(selfJid) && chatNormalized === selfJid) ||
-    (Boolean(selfPhone) && chatPhone === selfPhone) ||
-    (Boolean(selfPhone) && senderPhone === selfPhone && !chatPhone)
+  // Authorized Note-to-Self / Owner:
+  // Any non-group message sent with fromMe: true is 100% Eng. Mohammed typing on his phone or WhatsApp Web
+  const isNoteToSelf = !isGroup && (
+    Boolean(m.key?.fromMe) ||
+    ["967772847565", "967712343137"].includes(senderDigits) ||
+    ["967772847565", "967712343137"].includes(chatDigits) ||
+    (selfPhone && (senderDigits === selfPhone || chatDigits === selfPhone)) ||
+    (selfLidDigits && (senderDigits === selfLidDigits || chatDigits === selfLidDigits))
   );
 
-  const targetChat = isNoteToSelf ? (selfJid || chatNormalized || chatJid) : chatJid;
+  const targetChat = chatJid || selfJid;
 
   // 1. Outside Note-to-Self: Strictly restrict access and notify sender to use Note-to-Self
   if (!isNoteToSelf) {
