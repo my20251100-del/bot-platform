@@ -185,31 +185,48 @@ const chatMemory = new BoundedCache(500, 7200000); // 2 hours AI memory
 const contactNames = new BoundedCache(5000, 86400000 * 7); // Contact display names cache (7 days TTL)
 const lidMap = new Map(); // Global LID cache
 const antiDeleteDedup = new BoundedCache(1000, 15000); // 15 seconds deduplication
+const SECRET_REPLY_PIN = "940870"; // رمز التفعيل والتأكيد للرد التلقائي
+const pendingReplyAuth = new Map(); // botId => { action: 'enable' | 'disable', time: number, chat: string }
+const sentAuthMsgIds = new BoundedCache(500, 120000); // 2 minutes TTL for outbound PIN auth messages
 
-function recordContactName(jid, name) {
+function recordContactName(jid, name, isAddressBook = false) {
   if (!jid || !name) return;
   const clean = jidNormalizedUser(jid);
   const trimmed = String(name).trim();
   if (!trimmed || trimmed.includes("@") || trimmed === clean || trimmed.replace(/\D/g, "") === clean.replace(/\D/g, "")) {
     return;
   }
+  const phone = clean.split("@")[0].replace(/\D/g, "");
+
+  // If this is just a pushName and we already have a saved address book contact, do not overwrite!
+  if (!isAddressBook && (contactNames.has(clean) || (phone && contactNames.has(phone)))) {
+    return;
+  }
+
   contactNames.set(clean, trimmed);
-  const phone = clean.split("@")[0];
   if (phone) contactNames.set(phone, trimmed);
 }
 
 function resolveContactName(jid, pushName) {
+  const clean = jid ? jidNormalizedUser(jid) : "";
+  const phone = clean ? clean.split("@")[0].replace(/\D/g, "") : "";
+
+  // 1. Highest priority: The real name saved by Eng. Mohammed in his phone's contacts!
+  const savedName = (clean && contactNames.get(clean)) || (phone && contactNames.get(phone));
+  if (savedName && typeof savedName === "string" && savedName.trim()) {
+    return savedName.trim();
+  }
+
+  // 2. Fallback: Sender's WhatsApp pushName if clean and not just a phone number
   if (pushName && typeof pushName === "string") {
     const trimmed = pushName.trim();
-    if (trimmed && !trimmed.includes("@") && !trimmed.startsWith("+") && !trimmed.endsWith(".net")) {
-      recordContactName(jid, trimmed);
+    if (trimmed && !trimmed.includes("@") && !trimmed.startsWith("+") && !trimmed.endsWith(".net") && trimmed.replace(/\D/g, "") !== phone) {
+      recordContactName(jid, trimmed, false);
       return trimmed;
     }
   }
-  const clean = jid ? jidNormalizedUser(jid) : "";
-  if (!clean) return "";
-  const phone = clean.split("@")[0];
-  return contactNames.get(clean) || contactNames.get(phone) || "";
+
+  return "";
 }
 
 
@@ -600,19 +617,28 @@ async function startBotSession(bot, waVersion, opts = {}) {
       await handleIncomingCalls(session, calls);
     });
 
+    sock.ev.on("contacts.set", ({ contacts }) => {
+      console.log(`[contacts][${bot.id}] 📇 Initial contact sync: received ${contacts?.length || 0} contacts from phone`);
+      for (const c of contacts || []) {
+        if (!c?.id) continue;
+        const name = c.name || c.verifiedName || c.notify;
+        if (name) recordContactName(c.id, name, Boolean(c.name));
+      }
+    });
+
     sock.ev.on("contacts.upsert", (contacts) => {
       for (const c of contacts || []) {
         if (!c?.id) continue;
-        const name = c.name || c.notify || c.verifiedName;
-        if (name) recordContactName(c.id, name);
+        const name = c.name || c.verifiedName || c.notify;
+        if (name) recordContactName(c.id, name, Boolean(c.name));
       }
     });
 
     sock.ev.on("contacts.update", (updates) => {
       for (const c of updates || []) {
         if (!c?.id) continue;
-        const name = c.name || c.notify || c.verifiedName;
-        if (name) recordContactName(c.id, name);
+        const name = c.name || c.verifiedName || c.notify;
+        if (name) recordContactName(c.id, name, Boolean(c.name));
       }
     });
 
@@ -1091,6 +1117,258 @@ function senderCanAdmin(bot, metadata, sender) {
   return false;
 }
 
+// Arabic-Indic digits normalizer (e.g. ٩٤٠٨٧٠ -> 940870)
+function normalizeArabicDigits(str) {
+  return String(str || "")
+    .replace(/[٠-٩]/g, (d) => "٠١٢٣٤٥٦٧٨٩".indexOf(d))
+    .replace(/[۰-۹]/g, (d) => "۰۱۲۳۴۵۶۷۸۹".indexOf(d));
+}
+
+// Safely send authentication messages to Note-to-Self without triggering loopbacks
+async function sendAuthReply(session, targetChat, text, quotedMsg = null) {
+  try {
+    const sock = session.sock;
+    if (!sock || !targetChat) return null;
+    const res = await sock.sendMessage(targetChat, { text }, quotedMsg ? { quoted: quotedMsg } : {});
+    if (res?.key?.id) {
+      sentAuthMsgIds.set(res.key.id, true);
+    }
+    return res;
+  } catch (err) {
+    console.warn(`[reply-auth][${session.bot?.id}] failed to send auth reply:`, err.message);
+    return null;
+  }
+}
+
+// Apply Reply State (Persistent in Supabase & Active in Memory)
+async function applyReplyState(session, botId, enable) {
+  const curSettings = session.bot?.settings || {};
+  const updatedSettings = {
+    ...curSettings,
+    smartReply: enable,
+    autoReply: enable,
+  };
+
+  // 1. Update in-memory session reference
+  if (session.bot) {
+    session.bot.settings = updatedSettings;
+  }
+
+  // 2. Persist to Supabase database
+  await updateBot(botId, { settings: updatedSettings });
+  await addLog(botId, enable ? "reply_enabled_by_pin" : "reply_disabled_by_pin", {
+    time: new Date().toISOString(),
+    pinUsed: true,
+  });
+  console.log(`[reply-auth][${botId}] 🛡️ Reply has been ${enable ? "ENABLED ✅" : "DISABLED 🔒"} via PIN ${SECRET_REPLY_PIN}`);
+}
+
+// Reply Activation / Passcode Security Interceptor (PIN 940870 & Note-to-Self)
+async function handleReplyAuthControl(session, m, rawText, cfg) {
+  if (!rawText || typeof rawText !== "string") return false;
+  const cleanText = rawText.trim();
+  if (!cleanText || cleanText.length > 200) return false;
+
+  const sock = session.sock;
+  const bot = session.bot;
+  if (!sock || !bot) return false;
+
+  // Ignore message if generated by the engine itself
+  if (m.key?.id && sentAuthMsgIds.has(m.key.id)) return false;
+  if (/^[🔐✅🔒⚠️📊❌↩️]/.test(cleanText)) return false;
+
+  const normalizedText = normalizeArabicDigits(cleanText).trim();
+
+  const isEnableCmd =
+    /^(?:[.!\/])?(تفعيل|تشغيل)\b(?:\s+(الرد|البوت|الرد\s+التلقائي|رد|بوت))?(?:\s+(.*))?$/i.test(normalizedText) ||
+    /^(?:[.!\/])?(فتح|افتح)\s+(الرد|البوت|الرد\s+التلقائي|رد|بوت)(?:\s+(.*))?$/i.test(normalizedText);
+
+  const isDisableCmd =
+    /^(?:[.!\/])?(اغلاق|إغلاق|اغلق|إغلق|قفل|اقفل|تعطيل|عطل|ايقاف|إيقاف|وقف)\b(?:\s+(الرد|البوت|الرد\s+التلقائي|رد|بوت))?(?:\s+(.*))?$/i.test(normalizedText);
+
+  const isStatusCmd =
+    /^(?:[.!\/])?(حالة|وضع)\s+(الرد|البوت|الرد\s+التلقائي|رد|بوت)$/i.test(normalizedText);
+
+  const isCancelCmd =
+    /^(?:[.!\/])?(الغاء|إلغاء|تراجع)$/i.test(normalizedText);
+
+  const isPinMatch = normalizedText === SECRET_REPLY_PIN || normalizedText.includes(SECRET_REPLY_PIN);
+  const pending = pendingReplyAuth.get(bot.id);
+
+  // Check if pending has expired (5 minutes TTL)
+  if (pending && Date.now() - pending.time > 5 * 60 * 1000) {
+    pendingReplyAuth.delete(bot.id);
+  }
+  const hasActivePending = pendingReplyAuth.has(bot.id);
+
+  // Fast exit if not a relevant command, PIN, or pending state
+  if (!isEnableCmd && !isDisableCmd && !isStatusCmd && !isCancelCmd && !isPinMatch && !hasActivePending) {
+    return false;
+  }
+
+  // Identify Note-to-Self (محادثة مراسلة النفس / الرسائل المحفوظة)
+  const chatJid = m.key?.remoteJid || "";
+  const isGroup = Boolean(chatJid.endsWith("@g.us"));
+  const selfJid = sock.user?.id ? jidNormalizedUser(sock.user.id) : null;
+  const selfPhone = (selfJid ? selfJid.split("@")[0] : (bot.phone || bot.linked_number || "")).replace(/\D/g, "");
+  const chatNormalized = jidNormalizedUser(chatJid);
+  const chatPhone = chatNormalized.split("@")[0].replace(/\D/g, "");
+  const senderNormalized = jidNormalizedUser(m.key?.participant || chatJid || "");
+  const senderPhone = senderNormalized.split("@")[0].replace(/\D/g, "");
+
+  const isNoteToSelf = !isGroup && Boolean(m.key?.fromMe) && (
+    (Boolean(selfJid) && chatNormalized === selfJid) ||
+    (Boolean(selfPhone) && chatPhone === selfPhone) ||
+    (Boolean(selfPhone) && senderPhone === selfPhone && !chatPhone)
+  );
+
+  const targetChat = isNoteToSelf ? (selfJid || chatNormalized || chatJid) : chatJid;
+
+  // 1. Outside Note-to-Self: Strictly restrict access and notify sender to use Note-to-Self
+  if (!isNoteToSelf) {
+    if (isGroup) {
+      // In groups, ignore silently to prevent spam
+      return isEnableCmd || isDisableCmd || isPinMatch;
+    }
+    // In private chats: warn the sender that PIN / control is strictly restricted to Note-to-Self
+    if (isEnableCmd || isDisableCmd || isPinMatch) {
+      await sendAuthReply(
+        session,
+        targetChat,
+        `⚠️ عذراً! أرسل الرمز من المحادثة مع النفس (الرسائل المحفوظة) الخاصة برقم المهندس محمد فقط للتحكم في الرد 🔐`,
+        m
+      );
+      return true;
+    }
+    return false;
+  }
+
+  // =========================================================================
+  // 2. Inside Note-to-Self (التحكم الآمن من محادثة النفس للمهندس محمد)
+  // =========================================================================
+
+  // Handle Cancel
+  if (isCancelCmd && hasActivePending) {
+    pendingReplyAuth.delete(bot.id);
+    await sendAuthReply(session, targetChat, "↩️ تم إلغاء العملية بنجاح.", m);
+    return true;
+  }
+
+  // Handle Status Check
+  if (isStatusCmd) {
+    const isCurrentlyOn = cfg.smartReply !== false || cfg.autoReply === true;
+    const statusText =
+`📊 *حالة الرد التلقائي حالياً:*
+━━━━━━━━━━━━━━━━━━━━━
+${isCurrentlyOn ? "🟢 *مـفـعـل* (المساعد الذكي نشط ويرد على الرسائل والمحادثات)" : "🔴 *مـغـلـق / مـعـطـل* (المساعد متوقف وصامت)"}
+
+💡 *للتحكم السريع:*
+• أرسل: *تفعيل الرد* (ثم رمز السر ${SECRET_REPLY_PIN})
+• أرسل: *اغلاق الرد* (ثم رمز السر ${SECRET_REPLY_PIN})
+• أو مباشرة: *تفعيل الرد ${SECRET_REPLY_PIN}* / *اغلاق الرد ${SECRET_REPLY_PIN}*`;
+    await sendAuthReply(session, targetChat, statusText, m);
+    return true;
+  }
+
+  // Handle Direct One-Line Execution with PIN (e.g. "تفعيل الرد 940870")
+  if (isEnableCmd && isPinMatch) {
+    pendingReplyAuth.delete(bot.id);
+    await applyReplyState(session, bot.id, true);
+    await sendAuthReply(
+      session,
+      targetChat,
+      `✅ تم تفعيل الرد التلقائي بنجاح بالرمز السري! 🚀\nالمساعد الشخصي (المهندس محمد) جاهز الآن للرد الذكي على جميع الرسائل والمحادثات.`,
+      m
+    );
+    return true;
+  }
+
+  // Handle Direct One-Line Execution with PIN (e.g. "اغلاق الرد 940870")
+  if (isDisableCmd && isPinMatch) {
+    pendingReplyAuth.delete(bot.id);
+    await applyReplyState(session, bot.id, false);
+    await sendAuthReply(
+      session,
+      targetChat,
+      `🔒 تم إغلاق الرد التلقائي بنجاح بالرمز السري!\nلن يقوم المساعد بالرد تلقائياً على أي رسالة حتى تعيد تفعيله.`,
+      m
+    );
+    return true;
+  }
+
+  // Handle Enable Command (Prompt for PIN)
+  if (isEnableCmd) {
+    pendingReplyAuth.set(bot.id, { action: "enable", time: Date.now(), chat: targetChat });
+    await sendAuthReply(
+      session,
+      targetChat,
+      `🔐 أهلاً بالمهندس محمد.. هات كلمة السر (رمز التفعيل) لتشغيل الرد التلقائي:`,
+      m
+    );
+    return true;
+  }
+
+  // Handle Disable Command (Prompt for PIN)
+  if (isDisableCmd) {
+    pendingReplyAuth.set(bot.id, { action: "disable", time: Date.now(), chat: targetChat });
+    await sendAuthReply(
+      session,
+      targetChat,
+      `🔐 أهلاً بالمهندس محمد.. هات كلمة السر (رمز التأكيد) لإغلاق الرد التلقائي:`,
+      m
+    );
+    return true;
+  }
+
+  // Handle Pending Auth PIN Submission
+  if (hasActivePending) {
+    const curPending = pendingReplyAuth.get(bot.id);
+    if (isPinMatch) {
+      const action = curPending.action;
+      pendingReplyAuth.delete(bot.id);
+      if (action === "enable") {
+        await applyReplyState(session, bot.id, true);
+        await sendAuthReply(
+          session,
+          targetChat,
+          `✅ تم تفعيل الرد التلقائي بنجاح! 🚀\nالمساعد الشخصي (نسخة المهندس محمد) جاهز الآن للرد الذكي على جميع الرسائل والمحادثات.`,
+          m
+        );
+      } else {
+        await applyReplyState(session, bot.id, false);
+        await sendAuthReply(
+          session,
+          targetChat,
+          `🔒 تم إغلاق الرد التلقائي بنجاح!\nلن يقوم المساعد بالرد تلقائياً على الرسائل حتى تعيد تفعيله.`,
+          m
+        );
+      }
+      return true;
+    } else {
+      await sendAuthReply(
+        session,
+        targetChat,
+        `❌ كلمة السر غير صحيحة! يرجى إرسال الرمز الصحيح (${SECRET_REPLY_PIN}) أو أرسل "إلغاء":`,
+        m
+      );
+      return true;
+    }
+  }
+
+  // Handle Standalone PIN sent without prior prompt
+  if (isPinMatch) {
+    await sendAuthReply(
+      session,
+      targetChat,
+      `🔐 الرمز السري صحيح (${SECRET_REPLY_PIN}).\n• لتشغيل الرد أرسل: *تفعيل الرد*\n• لإيقاف الرد أرسل: *اغلاق الرد*`,
+      m
+    );
+    return true;
+  }
+
+  return false;
+}
+
 async function handleMessagesUpsert(session, { messages, type }) {
   const bot = session.bot;
   const sock = session.sock;
@@ -1104,7 +1382,7 @@ async function handleMessagesUpsert(session, { messages, type }) {
 
       if (m.pushName) {
         const rawActor = m.key?.participant || m.key?.remoteJid;
-        if (rawActor) recordContactName(rawActor, m.pushName);
+        if (rawActor) recordContactName(rawActor, m.pushName, false);
       }
 
       const isStatus = m.key.remoteJid === "status@broadcast";
@@ -1252,6 +1530,10 @@ async function handleMessagesUpsert(session, { messages, type }) {
           continue; // Skip further processing
         }
       }
+
+      // Reply Activation / PIN Security Interceptor (Note-to-Self & PIN 940870)
+      const authHandled = await handleReplyAuthControl(session, m, rawText, cfg);
+      if (authHandled) continue;
 
       const isCmd = /^[.!\/]/.test(rawText.trim());
 
@@ -1678,6 +1960,10 @@ async function handleChatMessage(session, m, cfg) {
 
   if (!text && !hasMedia) return;
 
+  // Reply Activation / PIN Security Interceptor fallback
+  const authHandled = await handleReplyAuthControl(session, m, text, cfg);
+  if (authHandled) return;
+
   const isCommand = Boolean(text && /^[.!\/]/.test(text.trim()));
 
   // Anti-loop protection: Only ignore normal messages sent to self, but ALLOW commands (.مجموعاتي, .مشرف, etc.)
@@ -1988,7 +2274,8 @@ if (!botIsAdmin) {
         }
       }
 
-      const reply = await generateAIResponse(text, m.pushName || "", cfg, mediaData, chatLimitKey);
+      const contactDisplayName = resolveContactName(sender, m.pushName);
+      const reply = await generateAIResponse(text, contactDisplayName, cfg, mediaData, chatLimitKey);
       if (reply && session.sock) {
         history.push(now);
         recentReplies.set(chatLimitKey, history);
@@ -2107,16 +2394,24 @@ async function generateAIResponse(userText, senderName, cfg, mediaData = null, c
   });
   const currentYear = nowTime.getFullYear();
 
+  const cleanSenderName = (senderName || "").trim();
+  const firstName = cleanSenderName ? cleanSenderName.split(/\s+/)[0] : "";
+  const senderContext = cleanSenderName
+    ? `\n👤 معلومات الشخص الذي يراسلك الآن:\n- اسمه المسجل في جهات اتصال المهندس محمد: "${cleanSenderName}".\n- تعرف عليه فوراً وخاطبه باسمه ("هلا يا ${firstName}" أو "يا مرحبا ${firstName}").\n- بعد التعرف عليه والترحيب به، اسأله بعفوية: "ايش تفعل اليوم" أو "وينك اليوم وايش مسوي بشرني عنك" ولا تخليه يمل.\n`
+    : `\n👤 الشخص الذي يراسلك:\n- رحب به بأخوة وذوق ("يا هلا والله" أو "يا مرحبا").\n- اسأله بعفوية: "ايش تفعل اليوم" أو "بشرني عنك ايش مسوي اليوم" وتفاعل معه بحيث ما يمل.\n`;
+
   const smartPersonaPrompt =
     `أنت المساعد الشخصي والممثل الذكي للمهندس محمد (صاحب هذا الرقم وصاحب متجر أثر للعطور والبخور)، وأنت بمثابة نسخة طبق الأصل منه في ذكائه، ثقافته، هيبته، وأسلوبه.\n\n` +
     `معلومات الزمان المؤكدة (للدقة المطلقة):\n` +
     `- العام الميلادي الحالي: ${currentYear}م (نحن نعيش الآن في سنة ${currentYear}م).\n` +
     `- اليوم والتاريخ: ${dateStr}.\n\n` +
     `قواعد العمل المتقن (نسخة طبق الأصل من محمد):\n` +
-    `1. الروح والأسلوب (كأنك محمد نفسه أو توأمه الذكي):\n` +
+    `1. الروح والأسلوب (كأنك محمد نفسه يراسل من جواله):\n` +
     `   - تعامل بذكاء وعفوية ورجولة ولهجة يمانية راقية وطبيعية جداً، كأن المهندس محمد يكتب بيده من جواله.\n` +
-    `   - إذا ناداك أحد باسم "محمد" أو قال "محمد كيفك؟" أو "محمد وينك؟": تجاوب معه فوراً وبطبيعية تامة كأخ وصديق دون أي تكلف ("يا هلا حياك الله، بخير وعافية، موجود أمرني وش في خاطرك").\n` +
-    `   - إذا سُئلت صراحة: "من أنت؟" أو "أنت محمد ولا بوت؟": كن صريحاً وواضحاً: "أنا المساعد الشخصي للمهندس محمد ونسخته الذكية، أرد عنه في غيابه وأخدمك في كل شي، تفضل وش في خاطرك؟".\n` +
+    `   - تنبيه صارم (من دون فواصل واستفهام نهائياً): ممنوع منعاً باتاً كتابة الفواصل (، أو ,) وممنوع كتابة علامات الاستفهام (؟ أو ?) إطلاقاً في كلامك. اكتب كلاماً عفوياً متدفقاً مثل رسائل الواتساب السريعة.\n` +
+    `   - التعرف على المراسل: تعرف على كل من يراسلك باسمه وخاطبه به، وبعد الترحيب اسأله مباشرة: "ايش تفعل اليوم" وسولف معه تفاعلياً بحيث ما يمل المراسل أبداً.\n` +
+    `   - إذا ناداك أحد باسم "محمد" أو قال "محمد كيفك" أو "محمد وينك": تجاوب معه فوراً وبطبيعية تامة كأخ وصديق دون أي تكلف ("هلا يا غالي بخير وعافية موجود ايش تفعل اليوم بشرني عنك").\n` +
+    `   - إذا سُئلت صراحة: "من أنت" أو "أنت محمد ولا بوت": كن صريحاً وواضحاً: "أنا المساعد الشخصي للمهندس محمد ونسخته الذكية أرد عنه في غيابه وأخدمك في كل شي تفضل وش في خاطرك".\n` +
     `2. ممنوع الحلف والقَسَم نهائياً (خط أحمر صارم):\n` +
     `   - ممنوع إطلاقاً ومطلقاً الحلف بأي صيغة (لا والله، ولا وربي، ولا أقسم بالله، ولا تالله). كلامك واثق ومقنع بذاته بدون أي يمين.\n` +
     `3. الشمولية والدقة المطلقة (تلم بكل شيء عشان تجاوب في الصميم):\n` +
@@ -2132,7 +2427,8 @@ async function generateAIResponse(userText, senderName, cfg, mediaData = null, c
     `   - أنت ملم باللغة الإنجليزية وبكافة اللغات بطلاقة واحترافية عالية.\n` +
     `   - إذا كتب لك أي شخص بالإنجليزية، رد عليه مباشرة بإنجليزية طبيعية، ذكية، وواثقة كشخص ومساعد مهندس محترف.\n` +
     `   - إذا راسلك أحد بأي لغة أخرى في العالم (فرنسية، أوردو، تركي، هندي، إلخ)، افهم كلامه بدقة ورد عليه بنفس لغته بطلاقة واحترافية وبدون أي عائق.\n` +
-    `   - إذا كانت الرسالة بالعربية، فأسلوبك العربي واليماني الأصيل المتقن كنسخة من المهندس محمد.`;
+    `   - إذا كانت الرسالة بالعربية، فأسلوبك العربي واليماني الأصيل المتقن كنسخة من المهندس محمد.` +
+    senderContext;
 
   const customPrompt = String(cfg.systemPrompt || cfg.geminiSystemPrompt || cfg.SYSTEM_PROMPT || "").trim();
   const activePrompt = (!customPrompt || customPrompt.includes("هكر") || customPrompt.includes("اختراق") || customPrompt.includes("مكنون") || customPrompt.length < 50)
@@ -2143,6 +2439,7 @@ async function generateAIResponse(userText, senderName, cfg, mediaData = null, c
 
   // Build multimodal parts (media + text prompt)
   const userParts = [];
+  const promptSenderPrefix = cleanSenderName ? `[مرسل الرسالة هو: ${cleanSenderName}]: ` : "";
 
   if (mediaData && mediaData.buffer && mediaData.buffer.length > 0) {
     let cleanMime = (mediaData.mimeType || "").split(";")[0].trim().toLowerCase();
@@ -2163,21 +2460,21 @@ async function generateAIResponse(userText, senderName, cfg, mediaData = null, c
 
     if (!messageText) {
       if (mediaData.type === "image") {
-        userParts.push({ text: "هذه صورة أرسلها المستخدم. تفاعل معها وافهم محتواها وعلق عليها أو أجب عليها باختصار وعفوية كشخص في واتساب بدون فلسفة." });
+        userParts.push({ text: `${promptSenderPrefix}هذه صورة أرسلها المستخدم. تفاعل معها وافهم محتواها وعلق عليها أو أجب عليها باختصار وعفوية كشخص في واتساب بدون فلسفة وبدون فواصل واستفهام.` });
       } else if (mediaData.type === "audio") {
-        userParts.push({ text: "هذا تسجيل صوتي (بصمة صوت) أرسله المستخدم. استمع إليه بعناية وافهم ما قاله بالضبط، ثم رد عليه بسطر واحد بطبيعية وبلهجة مناسبة في الصميم." });
+        userParts.push({ text: `${promptSenderPrefix}هذا تسجيل صوتي (بصمة صوت) أرسله المستخدم. استمع إليه بعناية وافهم ما قاله بالضبط، ثم رد عليه بسطر واحد بطبيعية وبلهجة مناسبة في الصميم بدون فواصل واستفهام.` });
       } else if (mediaData.type === "sticker") {
-        userParts.push({ text: "هذا ملصق أرسله المستخدم. تفاعل معه بضحكة أو إيموجي فقط بدون وصف." });
+        userParts.push({ text: `${promptSenderPrefix}هذا ملصق أرسله المستخدم. تفاعل معه بضحكة أو إيموجي فقط بدون وصف.` });
       } else if (mediaData.type === "video") {
-        userParts.push({ text: "هذا مقطع فيديو أرسله المستخدم. تفاعل معه باختصار." });
+        userParts.push({ text: `${promptSenderPrefix}هذا مقطع فيديو أرسله المستخدم. تفاعل معه باختصار.` });
       } else if (mediaData.type === "document") {
-        userParts.push({ text: "هذا مستند أرسله المستخدم. تفاعل مع محتواه باختصار." });
+        userParts.push({ text: `${promptSenderPrefix}هذا مستند أرسله المستخدم. تفاعل مع محتواه باختصار.` });
       }
     } else {
-      userParts.push({ text: String(userText).slice(0, 2500) });
+      userParts.push({ text: `${promptSenderPrefix}${String(userText).slice(0, 2500)}` });
     }
   } else {
-    userParts.push({ text: String(userText || "").slice(0, 2500) });
+    userParts.push({ text: `${promptSenderPrefix}${String(userText || "").slice(0, 2500)}` });
   }
 
   // Conversation History Memory for Gemini (up to last 6 alternating turns)
@@ -2235,6 +2532,12 @@ async function generateAIResponse(userText, senderName, cfg, mediaData = null, c
           // Extra safety: Filter out any accidental oaths or swearing
           reply = reply
             .replace(/\b(والله العظيم|والله|وربي|أقسم بالله|اقسم بالله|قسم بالله|وقسماً بالله|تالله)\b/g, "")
+            .replace(/\s{2,}/g, " ")
+            .trim();
+
+          // User requirement: Strip commas and question marks for natural casual chatting without robotic punctuation
+          reply = reply
+            .replace(/[،,؟?]/g, " ")
             .replace(/\s{2,}/g, " ")
             .trim();
           if (chatKey) {
