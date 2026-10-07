@@ -397,6 +397,53 @@ export default async function Home() {
           </div>
         </section>
 
+        {/* قسم استعراض أتمتة إنستقرام الجديد والحصري */}
+        <section className="relative mx-auto max-w-6xl px-4 py-8 sm:px-6">
+          <div className="relative overflow-hidden rounded-3xl border border-rose-500/30 bg-gradient-to-r from-slate-900 via-purple-950/40 to-slate-900 p-8 sm:p-12 shadow-2xl backdrop-blur-2xl">
+            <div className="pointer-events-none absolute -right-20 -top-20 h-72 w-72 rounded-full bg-rose-500/20 blur-3xl" />
+            <div className="pointer-events-none absolute -left-20 -bottom-20 h-72 w-72 rounded-full bg-amber-500/15 blur-3xl" />
+
+            <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-8">
+              <div className="max-w-2xl text-start">
+                <div className="inline-flex items-center gap-2 rounded-full border border-rose-500/30 bg-rose-500/10 px-3.5 py-1 text-xs font-bold text-rose-300 mb-4">
+                  <span>📸 جديد وحصري</span>
+                  <span>•</span>
+                  <span>قسم إنستقرام المستقل 2.0</span>
+                </div>
+                <h3 className="text-2xl sm:text-4xl font-extrabold text-white tracking-tight leading-tight">
+                  أتمتة حسابك على <span className="text-gradient-instagram font-display">Instagram</span> أصبحت متاحة الآن!
+                </h3>
+                <p className="mt-3 text-sm sm:text-base text-slate-300 leading-relaxed">
+                  صفحة مستقلة مخصصة لحسابك: مشاهدة الستوريات 24/7 سحابياً، تفاعل بالقلوب والإيموجي لرفع الظهور، ورد ذكي بالذكاء الاصطناعي على رسائل الدايركت (للعملاء، للأصدقاء، أو للجميع).
+                </p>
+                <div className="mt-5 flex flex-wrap gap-4 text-xs text-slate-300">
+                  <span className="flex items-center gap-1.5"><span className="text-rose-400">✓</span> مشاهدة الستوريات في 0.05s</span>
+                  <span className="flex items-center gap-1.5"><span className="text-rose-400">✓</span> تفاعل بالقلوب</span>
+                  <span className="flex items-center gap-1.5"><span className="text-rose-400">✓</span> رد آلي للعملاء والأصدقاء</span>
+                  <span className="flex items-center gap-1.5"><span className="text-rose-400">✓</span> كود تفعيل 940870</span>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row md:flex-col gap-3 w-full md:w-auto flex-shrink-0">
+                <Link
+                  href="/instagram"
+                  className="btn-instagram text-center text-sm sm:text-base font-bold py-3.5 px-8 shadow-xl shadow-rose-500/30 whitespace-nowrap"
+                >
+                  دخول قسم إنستقرام 📸
+                </Link>
+                <a
+                  href="https://wa.me/967772847565?text=%D9%85%D8%B1%D8%AD%D8%A8%D8%A7%D9%8B%20Hatem%20X%D8%8C%20%D8%A3%D8%B1%D9%8A%D8%AF%20%D8%AA%D9%81%D8%B9%D9%8A%D9%84%20%D8%A3%D8%AA%D9%85%D8%AA%D8%A9%20%D8%A7%D9%84%D8%A7%D9%86%D8%B3%D8%AA%D9%82%D8%B1%D8%A7%D9%85"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-center rounded-xl border border-white/10 bg-slate-900/80 hover:bg-slate-800 text-xs sm:text-sm font-semibold text-slate-200 py-3 px-6 transition"
+                >
+                  💬 تفعيل مباشر مع Hatem X
+                </a>
+              </div>
+            </div>
+          </div>
+        </section>
+
         {/* قسم محفظة الكريدت والمكافآت اليومية */}
         <section className="border-t border-white/10 bg-slate-950/60 py-20 backdrop-blur-xl">
           <div className="mx-auto max-w-6xl px-4 sm:px-6">

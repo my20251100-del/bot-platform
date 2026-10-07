@@ -115,6 +115,22 @@ export default function SiteHeaderClient({ user }: SiteHeaderClientProps) {
             )}
           </div>
 
+          {/* رابط قسم إنستقرام المستقل الجديد */}
+          <Link
+            href="/instagram"
+            className="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-sm font-bold transition hover:bg-white/10"
+          >
+            <span className="grid h-5 w-5 place-items-center rounded-md bg-gradient-to-tr from-amber-400 via-rose-500 to-purple-600 text-[10px]">
+              📸
+            </span>
+            <span className="bg-gradient-to-r from-amber-300 via-rose-400 to-purple-400 bg-clip-text text-transparent">
+              Instagram
+            </span>
+            <span className="rounded-full bg-rose-500/20 px-1.5 text-[9px] font-black text-rose-300 border border-rose-500/30">
+              جديد
+            </span>
+          </Link>
+
           <Link href="/connect" className="rounded-xl px-3.5 py-1.5 text-sm font-semibold text-cyan-400 transition hover:bg-cyan-500/10">
             {t("⚡ ربط سريع")}
           </Link>
@@ -207,6 +223,20 @@ export default function SiteHeaderClient({ user }: SiteHeaderClientProps) {
             >
               <span>🤖</span>
               <span>{t("The Mini Bot (منصة البوت)")}</span>
+            </Link>
+
+            <Link
+              href="/instagram"
+              onClick={() => setMobileMenuOpen(false)}
+              className="flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-bold text-white bg-gradient-to-r from-amber-500/15 via-rose-500/15 to-purple-600/15 border border-rose-500/30 hover:brightness-110"
+            >
+              <span className="grid h-6 w-6 place-items-center rounded-lg bg-gradient-to-tr from-amber-400 via-rose-500 to-purple-600 text-xs">
+                📸
+              </span>
+              <span>Instagram (أتمتة إنستقرام الذكية)</span>
+              <span className="rounded-full bg-rose-500 px-1.5 py-0.5 text-[9px] font-black text-white ms-auto">
+                جديد
+              </span>
             </Link>
 
             <Link

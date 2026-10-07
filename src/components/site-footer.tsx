@@ -98,6 +98,7 @@ export default async function SiteFooter() {
             <ul className="space-y-2.5">
               {[
                 { href: "/", t: t("الرئيسية"), icon: "🌐" },
+                { href: "/instagram", t: "أتمتة إنستقرام 📸", icon: "📸" },
                 { href: "/login", t: t("تسجيل الدخول"), icon: "🔑" },
                 { href: "/signup", t: t("إنشاء حساب"), icon: "👤" },
               ].map((l) => (
@@ -114,11 +115,17 @@ export default async function SiteFooter() {
           <div>
             <p className="mb-4 text-xs font-bold uppercase tracking-wider text-emerald-400">{t("الخدمات")}</p>
             <ul className="space-y-2.5">
-              {[t("تفاعلات واتساب"), t("متابعو واتساب"), t("البوت المصغّر"), t("وصول API"), t("تخزين سحابي")].map((label) => (
-                <li key={label}>
-                  <Link className="group flex items-center gap-2 text-sm text-slate-400 transition-colors hover:text-white" href="/connect">
+              {[
+                { label: "أتمتة إنستقرام 📸", href: "/instagram" },
+                { label: "مشاهدة الستوريات 👁️", href: "/instagram" },
+                { label: "رد الدايركت الذكي 🤖", href: "/instagram" },
+                { label: t("تفاعلات واتساب"), href: "/connect" },
+                { label: t("البوت المصغّر"), href: "/bot" },
+              ].map((item) => (
+                <li key={item.label}>
+                  <Link className="group flex items-center gap-2 text-sm text-slate-400 transition-colors hover:text-white" href={item.href}>
                     <span className="text-slate-600 group-hover:text-cyan-400 transition-colors">⚡</span>
-                    {label}
+                    {item.label}
                   </Link>
                 </li>
               ))}
