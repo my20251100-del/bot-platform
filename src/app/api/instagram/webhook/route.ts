@@ -4,6 +4,25 @@ import { createAdmin } from "@/lib/supabase/admin";
 export const dynamic = "force-dynamic";
 
 const VERIFY_TOKEN = process.env.INSTAGRAM_VERIFY_TOKEN || "hatem_x_token_940870";
+const BOT_ID = process.env.INSTAGRAM_BOT_ID || "7338dc51-affe-4eab-81c3-ab04cfe879e2";
+
+// دالة مساعدة لإرسال الرد عبر Meta Graph API
+async function sendMetaReply(recipientId: string, replyText: string, token: string) {
+  try {
+    const res = await fetch(`https://graph.facebook.com/v21.0/me/messages?access_token=${token}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        recipient: { id: recipientId },
+        message: { text: replyText },
+      }),
+    });
+    const data = await res.json();
+    return { ok: res.ok, data };
+  } catch (err: any) {
+    return { ok: false, error: err.message };
+  }
+}
 
 // 1. GET: التحقق من الرابط بواسطة خوادم Meta / Instagram
 export async function GET(req: Request) {
@@ -31,6 +50,7 @@ export async function POST(req: Request) {
 
     if (body.object === "instagram" || body.object === "page") {
       const entries = body.entry || [];
+      const token = process.env.INSTAGRAM_PAGE_ACCESS_TOKEN || process.env.PAGE_ACCESS_TOKEN || process.env.INSTAGRAM_ACCESS_TOKEN;
 
       for (const entry of entries) {
         // رسائل الدايركت (Messaging)
@@ -46,23 +66,35 @@ export async function POST(req: Request) {
           console.log(`[Instagram DM] Received from ${senderId}: "${messageText}"`);
 
           // معالجة كود الإيقاف والتفعيل المعتمد
-          if (messageText.trim() === "940870" || messageText.includes("رمز التفعيل")) {
-            console.log(`[Instagram DM] Passcode detected from ${senderId}`);
-          }
+          const isPasscode = messageText.trim() === "940870" || messageText.includes("رمز التفعيل");
 
-          // تسجيل الحدث في سجلات المنصة
+          // تسجيل الحدث في سجلات المنصة بالهيكلية المتوافقة
           try {
             const admin = createAdmin();
             await admin.from("bot_logs").insert({
-              event_type: "instagram_dm",
-              details: {
+              bot_id: BOT_ID,
+              event: "instagram_dm",
+              payload: {
                 senderId,
                 recipientId,
                 text: messageText,
+                isPasscode,
                 platform: "instagram",
               },
             });
-          } catch {}
+          } catch (e: any) {
+            console.error("[Instagram Webhook] DB log error:", e.message);
+          }
+
+          // إرسال رد تلقائي عبر Meta Send API إن توفر التوكن
+          if (token && !isEcho) {
+            let replyText = "أهلاً بك في متجر أثر للعطور الفاخرة والبخور الملكي 🌸 نسعد بخدمتك، تفضل بسؤالك وسنجيبك فوراً!";
+            if (isPasscode) {
+              replyText = "✅ تم التحقق من رمز المرور 940870 بنجاح. أتمتة إنستقرام مفعلة ونشطة 100%!";
+            }
+
+            await sendMetaReply(senderId, replyText, token);
+          }
         }
 
         // تفاعلات ومشاركات الستوري (Story Mentions / Replies)
@@ -70,6 +102,14 @@ export async function POST(req: Request) {
         for (const change of changes) {
           if (change.field === "story_insights" || change.field === "mentions") {
             console.log("[Instagram Story Event]:", change);
+            try {
+              const admin = createAdmin();
+              await admin.from("bot_logs").insert({
+                bot_id: BOT_ID,
+                event: "instagram_story_event",
+                payload: change,
+              });
+            } catch {}
           }
         }
       }
@@ -83,3 +123,4 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
+
